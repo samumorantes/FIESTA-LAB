@@ -852,6 +852,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # cambio manual de palabras/frase: invalida cachés para re-repartir YA
                 _player_cache["data"] = None
                 _player_cache["mw"] = -1
+                for k in [k for k in _track_cache if k.endswith("|%d" % mw)]:
+                    _track_cache.pop(k, None)
+                _sync_cache["lyrics"] = []   # el sync re-servirá las nuevas frases
             try:
                 self._send(200, json.dumps(build_state(mw), ensure_ascii=False),
                            "application/json; charset=utf-8")

@@ -28,16 +28,18 @@
          --hx0: .08506; --hy0: .09563; --hx1: .08573; --hy1: .09664; } /* hueco frac */
   #tvFrame{position:absolute;inset:0;z-index:20;pointer-events:none;
     background:url("tv-frame-clean.png") no-repeat center / auto 100%}
-  /* pantalla EXACTAMENTE en el hueco (válido para cualquier viewport 16:9 o más ancho) */
+  /* pantalla EXACTAMENTE en el hueco (válido para cualquier viewport 16:9 o más ancho).
+     Se expande +1.2% por lado para meterse BAJO el bisel negro interno del PNG,
+     y border-radius grande para seguir la curva de las esquinas del tubo. */
   #screen{
-    left: calc(50vw - (100svh * var(--tvratio) / 2) + (100svh * var(--tvratio)) * var(--hx0));
-    top: calc(100svh * var(--hy0));
-    width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)));
-    height: calc(100svh * (1 - var(--hy0) - var(--hy1)));
+    left: calc(50vw - (100svh * var(--tvratio) / 2) + (100svh * var(--tvratio)) * var(--hx0) - 1.2svh);
+    top: calc(100svh * var(--hy0) - 1.2svh);
+    width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)) + 2.4svh);
+    height: calc(100svh * (1 - var(--hy0) - var(--hy1)) + 2.4svh);
     position:absolute; z-index:0; overflow:hidden;
     transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
     transform-origin:50% 45%;
-    border-radius:.6vmin}
+    border-radius:4vmin}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
   /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
@@ -417,6 +419,20 @@
         <option value="none">Sin transición</option>
       </select></div>
     <div class="row"><button id="testChan" class="btn2">Probar transición</button></div>
+
+    <h3>💾 Presets por música</h3>
+    <div class="row" style="font-size:11px;opacity:.7;line-height:1.4">
+      Guarda cómo se ve AHORA y se aplicará solo cuando suene esta canción, artista o álbum.</div>
+    <div class="row"><button id="savePresetSong" class="btn2">🎵 Guardar para ESTA canción</button></div>
+    <div class="row"><button id="savePresetArtist" class="btn2">🎤 Guardar para este ARTISTA</button></div>
+    <div class="row"><button id="savePresetAlbum" class="btn2">💿 Guardar para este ÁLBUM</button></div>
+    <div class="row"><span id="presetCount" style="font-size:11px;opacity:.6"></span></div>
+    <div class="row"><button id="clearPresets" class="btn2">🗑 Borrar todos los presets</button></div>
+
+    <h3>🌊 Fluido: paleta manual</h3>
+    <div class="chk"><input id="customPalChk" type="checkbox"> Usar paleta manual (ignora portada)</div>
+    <div id="palPickers" style="display:flex;gap:6px;margin-bottom:8px"></div>
+    <div class="row"><button id="palRandom" class="btn2">🎲 Colores aleatorios</button></div>
     <div class="row"><button id="resetBtn" class="btn2">↺ Restablecer configuración</button></div>
 
     <h3>Cuenta</h3>
@@ -488,7 +504,15 @@ const CFG_DEFAULTS = {
   spectrum: false,         // barras ecualizador retro (solo fiesta)
   beatBounce: false,       // la letra late con el beat (escala 1.00→1.02)
   dropFx: true,            // explosión de partículas en el drop
+  customPal: false,        // usar paleta manual en el fluido
+  customPalCols: ["#5a2a91", "#8f3f7d", "#2a6b91", "#c46a3f", "#3f915a"],
 };
+/* claves que se guardan en un preset de música */
+const PRESET_KEYS = ["fs","font","phrase","upper","stroke","shadow","timing","mode",
+  "pulseColor","pulseWhite","flashStrength","scan","mask","vig","noise",
+  "flicker","tilt","refresh","scanOn","fish","tv","transition","theme",
+  "trails","spectrum","beatBounce","dropFx","smartContrast",
+  "customPal","customPalCols","wordSpacing","lensStrength"];
 const cfg = Object.assign({}, CFG_DEFAULTS);
 try { Object.assign(cfg, JSON.parse(localStorage.getItem("fv_cfg") || "{}")); } catch (e) {}
 // La paleta debe reaccionar al beat real, no a barras antiguas guardadas.
@@ -582,6 +606,120 @@ $("resetBtn").onclick = () => {
   $("testChan").textContent = "✓ Configuración restablecida";
   setTimeout(() => { $("testChan").textContent = "Probar transición"; }, 1500);
 };
+
+/* ---------- 💾 PRESETS POR MÚSICA (canción / artista / álbum) ---------- */
+const PRESETS_KEY = "fv_presets";
+function loadPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || "{}"); }
+  catch (e) { return {}; }
+}
+function savePresets(p) { localStorage.setItem(PRESETS_KEY, JSON.stringify(p)); updatePresetCount(); }
+function currentTrackKeys() {
+  const t = S && S.track;
+  if (!t) return {};
+  return { song: "song:" + t.name, artist: "artist:" + t.artist,
+           album: "album:" + (t.album || "") };
+}
+function capturePreset() {
+  const p = {};
+  PRESET_KEYS.forEach(k => p[k] = cfg[k]);
+  return p;
+}
+function applyPreset(p, label) {
+  PRESET_KEYS.forEach(k => { if (p[k] !== undefined) cfg[k] = p[k]; });
+  save(); applyCfg(); syncAllControls();
+  showToast("💾 PRESET: " + label);
+}
+let _presetAppliedFor = null;   // track_id del último preset aplicado
+function checkPresets() {
+  if (!S || !S.track) return;
+  const keys = currentTrackKeys();
+  const store = loadPresets();
+  // prioridad: canción > artista > álbum
+  for (const k of [keys.song, keys.artist, keys.album]) {
+    if (k && store[k]) {
+      if (_presetAppliedFor !== S.track.id) {
+        _presetAppliedFor = S.track.id;
+        applyPreset(store[k], k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
+        if (store[k].customPal && store[k].customPalCols) {
+          coverPalette = store[k].customPalCols.map(hex2rgbArr);
+          _lastCoverKey = "preset";
+          clearChillGradient();
+          if (isChill()) startFluid();
+        }
+      }
+      return;
+    }
+  }
+  _presetAppliedFor = null;   // esta canción no tiene preset
+}
+["savePresetSong","savePresetArtist","savePresetAlbum"].forEach((id, i) => {
+  $(id).onclick = () => {
+    const kind = ["song","artist","album"][i];
+    const keys = currentTrackKeys();
+    const key = keys[kind];
+    if (!key) { showToast("⚠ SIN MÚSICA REPRODUCIENDO"); return; }
+    const store = loadPresets();
+    store[key] = capturePreset();
+    savePresets(store);
+    showToast("💾 GUARDADO (" + kind.toUpperCase() + ")");
+    _presetAppliedFor = null;   // re-evaluar al próximo tick
+  };
+});
+$("clearPresets").onclick = () => { savePresets({}); showToast("🗑 PRESETS BORRADOS"); };
+function updatePresetCount() {
+  const n = Object.keys(loadPresets()).length;
+  const el = $("presetCount");
+  if (el) el.textContent = n ? n + " preset(s) guardado(s)" : "";
+}
+
+/* ---------- 🎨 PALETA MANUAL DEL FLUIDO ---------- */
+function initPalPickers() {
+  const wrap = $("palPickers");
+  wrap.innerHTML = "";
+  cfg.customPalCols.forEach((hex, i) => {
+    const inp = document.createElement("input");
+    inp.type = "color"; inp.value = hex;
+    inp.style.cssText = "width:44px;height:36px;border:none;border-radius:8px;background:none;cursor:pointer;padding:0";
+    inp.oninput = e => {
+      cfg.customPalCols[i] = e.target.value;
+      save();
+      if (cfg.customPal && isChill()) {
+        coverPalette = cfg.customPalCols.map(hex2rgbArr);
+        _lastCoverKey = "custom";
+        clearChillGradient(); startFluid();
+      }
+    };
+    wrap.appendChild(inp);
+  });
+}
+bindChk("customPalChk", "customPal");
+$("customPalChk").addEventListener("change", () => {
+  if (cfg.customPal) {
+    coverPalette = cfg.customPalCols.map(hex2rgbArr);
+    _lastCoverKey = "custom";
+    clearChillGradient();
+    if (isChill()) startFluid();
+    showToast("🎨 PALETA MANUAL ACTIVA");
+  } else {
+    coverPalette = null; _lastCoverKey = "";   // volver a la portada
+    extractCoverPalette(S && S.track && S.track.cover);
+  }
+});
+$("palRandom").onclick = () => {
+  cfg.customPalCols = cfg.customPalCols.map(() =>
+    "#" + [0,0,0].map(() => Math.floor(Math.random()*256).toString(16).padStart(2,"0")).join(""));
+  save(); initPalPickers();
+  if (cfg.customPal && isChill()) {
+    coverPalette = cfg.customPalCols.map(hex2rgbArr);
+    _lastCoverKey = "custom";
+    clearChillGradient(); startFluid();
+  }
+};
+function hex2rgbArr(hx) {
+  hx = hx.replace("#","");
+  return [parseInt(hx.slice(0,2),16), parseInt(hx.slice(2,4),16), parseInt(hx.slice(4,6),16)];
+}
 /* Sincronizar TODOS los controles del panel con cfg (usado por reset y todo/nada) */
 function syncAllControls() {
   [["fsRange","fs","fsVal"],["phraseRng","phrase","phraseVal"],["wordSpRng","wordSpacing","wordSpVal"],
@@ -702,11 +840,14 @@ function applyCfg() {
   applyEggFont();
   // REGLAS POR CANCIÓN (Die For You → vaporwave fluido) antes del modo normal
   if (!applyTrackRules() && S && S.track) {
-    const serverMood = S.mood || "party";
-    mood = cfg.moodOverride !== "auto" ? cfg.moodOverride : serverMood;
-    if (mood === "chill" && !coverPalette) extractCoverPalette(S.track.cover);
-    clearChillGradient();
-    if (isChill()) startFluid();
+    checkPresets();   // presets guardados por canción/artista/álbum (prioridad máxima)
+    if (_presetAppliedFor !== S.track.id) {
+      const serverMood = S.mood || "party";
+      mood = cfg.moodOverride !== "auto" ? cfg.moodOverride : serverMood;
+      if (mood === "chill" && !coverPalette) extractCoverPalette(S.track.cover);
+      clearChillGradient();
+      if (isChill()) startFluid();
+    }
   }
 }
 
@@ -948,8 +1089,11 @@ function applyEggFont() {
 let _lensReady = false;
 let _lensBuiltFor = null;
 function buildLens() {
-  const amp = Math.round(Math.min(innerWidth, innerHeight) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));
-  const key = amp + "x" + innerWidth + "x" + innerHeight;
+  // La lente debe deformar SOLO el área de pantalla dentro del televisor,
+  // no el viewport completo (por eso la esquina quedaba negra).
+  const sc = document.getElementById("screen").getBoundingClientRect();
+  const amp = Math.round(Math.min(sc.width, sc.height) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));
+  const key = Math.round(sc.width) + "x" + Math.round(sc.height);
   if (_lensBuiltFor === key && document.getElementById("lensMap")) return;
   _lensBuiltFor = key;
   const NS = "http://www.w3.org/2000/svg";
@@ -960,19 +1104,15 @@ function buildLens() {
     svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
     svg.style.position = "fixed"; svg.style.left = "-9999px";
     document.body.appendChild(svg);
-    svg.innerHTML =
-      `<filter id="lens" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">` +
-      `<feImage id="lensMap" x="0" y="0" width="${innerWidth}" height="${innerHeight}" preserveAspectRatio="none" result="map"/>` +
-      `<feDisplacementMap in="SourceGraphic" in2="map" scale="${amp}" ` +
-      `xChannelSelector="R" yChannelSelector="G"/>` +
-      `</filter>`;
-  } else {
-    const fi = svg.querySelector("feImage");
-    fi.setAttribute("width", innerWidth); fi.setAttribute("height", innerHeight);
-    svg.querySelector("feDisplacementMap").setAttribute("scale", amp);
   }
-  // generar mapa barril centrado
-  const W = Math.max(64, Math.round(innerWidth / 4)), H = Math.max(64, Math.round(innerHeight / 4));
+  svg.innerHTML =
+    `<filter id="lens" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">` +
+    `<feImage id="lensMap" x="${sc.left}" y="${sc.top}" width="${sc.width}" height="${sc.height}" preserveAspectRatio="none" result="map"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="map" scale="${amp}" ` +
+    `xChannelSelector="R" yChannelSelector="G"/>` +
+    `</filter>`;
+  // generar mapa barril centrado EN EL CRISTAL (no en el viewport)
+  const W = Math.max(64, Math.round(sc.width / 4)), H = Math.max(64, Math.round(sc.height / 4));
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const g = cv.getContext("2d"); const img = g.createImageData(W, H); const d = img.data;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -1502,7 +1642,11 @@ function startFluid() {
   // resolución reducida (50%): el fluido es difuso, se ve igual y rinde 4x
   cv.width = Math.round(innerWidth / 2); cv.height = Math.round(innerHeight / 2);
   cv.classList.add("on");
-  // blobs SOLO con colores de la portada actual (fallback: tonos derivados del primero)
+  // paleta: manual del usuario > portada > fallback
+  if (cfg.customPal && cfg.customPalCols && cfg.customPalCols.length >= 3) {
+    coverPalette = cfg.customPalCols.map(hex2rgbArr);
+    _lastCoverKey = "custom";
+  }
   let cols = coverPalette;
   if (!cols || cols.length < 3) return;   // sin paleta aún → el onload relanzará
   cols = cols.map(c => adjustTone(c));
@@ -1590,25 +1734,30 @@ function fluidLoop() {
   const tempo = S.tempo || 120;
   const breathe = 0.06 * Math.sin(performance.now()/1000 * (tempo/60) * Math.PI);   // respiración al BPM
   const boost = fluidEnergy * 0.30 + breathe;
+  const P = (coverPalette && coverPalette.length ? coverPalette : [[90,60,140],[160,80,120]]).map(c => adjustTone(c));
 
-  // fondo: mezcla viva de 2 colores de la paleta (diagonal), NUNCA gris plano
-  // ESTELAS: con cfg.trails, en vez de limpiar se desvanece (motion blur nebulosa)
+  // ESTELAS: con cfg.trails, en vez de limpiar se desvanece (motion blur nebulosa).
+  // El desvanecido es PARCIAL y sobre el gradiente base SEMI-OPACO para que
+  // las esquinas nunca queden negras (siempre hay color de fondo debajo).
   if (cfg.trails) {
     ctx.globalCompositeOperation = "source-over";
-    ctx.fillStyle = "rgba(0,0,0,0.06)";
+    const P0 = P[0], P1 = P[P.length-1];
+    const fade = ctx.createLinearGradient(0, 0, W, H);
+    fade.addColorStop(0, `rgba(${P0},0.16)`);       // nunca baja a negro
+    fade.addColorStop(1, `rgba(${P1},0.16)`);
+    ctx.fillStyle = fade;
     ctx.fillRect(0, 0, W, H);
     ctx.globalCompositeOperation = "lighter";   // acumular luz sobre las estelas
   } else {
     ctx.clearRect(0, 0, W, H);
   }
-  const P = (coverPalette || [[90,60,140],[160,80,120]]).map(c => adjustTone(c));
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, `rgb(${P[0]})`);
   bg.addColorStop(1, `rgb(${P[P.length-1]})`);
-  ctx.globalAlpha = cfg.trails ? 0.10 : 1;      // el gradiente base casi no pinta con estelas
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 1;
+  if (!cfg.trails) {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+  }
 
   // blobs: mezcla "screen" = siempre aclara, jamás ensucia a gris
   ctx.globalCompositeOperation = "screen";
@@ -1841,6 +1990,8 @@ function playVinyl(nextTrackId) {
 
 /* ---------- arranque ---------- */
 applyCfg();
+initPalPickers();
+updatePresetCount();
 onColor();
 tick();
 requestAnimationFrame(frame);
