@@ -167,7 +167,8 @@
 
   /* huevo: sin fósforos RGB (se queda la viñeta) */
   .line{font-family:var(--lyric-font);font-size:var(--fs);line-height:1.45;max-width:88vw;
-    text-shadow:var(--lyric-shadow, 0 0 2.5vmin rgba(255,255,255,.14))}
+      overflow-wrap:normal;word-break:keep-all;hyphens:none;-webkit-hyphens:none;
+      text-shadow:var(--lyric-shadow, 0 0 2.5vmin rgba(255,255,255,.14))}
   /* spans del fisheye: aislar en GPU para que la máscara RGB no los "fase" */
   .line.main span{display:inline-block}
   /* SUBTÍTULO: más pequeño y opaco (backs/paréntesis) */
@@ -892,10 +893,56 @@ function applyFisheye(el, text) {
   el.appendChild(frag);
 }
 
+/* ---------- AUTO-FIT: tamaño según pantalla + palabras NUNCA cortadas ---------- */
+let _fitCache = { key: "", fs: null };
+function autoFitSize(text) {
+  const el = $("lCur");
+  if (!el) return cfg.fs;
+  // 1) tamaño base adaptado al dispositivo (detector de pantalla)
+  let base = cfg.fs;
+  if (!autoFitSize._dev) {
+    const w = innerWidth, h = innerHeight;
+    const min = Math.min(w, h), ar = w / h;
+    // móvil vertical / horizontal pequeño → fuente proporcionalmente mayor pero limitada
+    autoFitSize._dev =
+      (min < 500 && ar < 1) ? 1.35 :   // móvil en vertical
+      (min < 700)           ? 1.15 :   // móvil horizontal / tablet pequeño
+      (w > 2200)            ? 0.85 :   // pantalla muy grande
+                               1.0;    // desktop normal
+    addEventListener("resize", () => { autoFitSize._dev = null; _fitCache.key = ""; }, { passive: true });
+  }
+  base *= autoFitSize._dev;
+
+  // 2) nunca partir una palabra: reducir hasta que la PALABRA MÁS LARGA quepa entera
+  const key = text + "|" + base.toFixed(2);
+  if (_fitCache.key === key && _fitCache.fs != null) return _fitCache.fs;
+  const longest = text.split(/\s+/).reduce((a, w) => w.length > a.length ? w : a, "");
+  let fs = base;
+  const MAX_ITER = 24, MIN_FS = 1.5;
+  el.style.visibility = "hidden";
+  for (let i = 0; i < MAX_ITER && fs > MIN_FS; i++) {
+    el.style.fontSize = fs + "vw";
+    // medir con texto plano: si la palabra más larga excede el ancho útil → reducir
+    el.textContent = longest;
+    const wordW = el.scrollWidth;
+    el.textContent = text;
+    const totalH = el.scrollHeight;
+    const maxW = el.clientWidth || innerWidth * 0.88;
+    const maxH = innerHeight * 0.72;
+    if (wordW <= maxW * 1.02 && totalH <= maxH) break;   // cabe completa
+    fs *= 0.9;
+  }
+  el.style.visibility = "";
+  el.textContent = "";
+  _fitCache = { key, fs };
+  return fs;
+}
+
 function setLyric(text, back) {
   $("lCur").style.whiteSpace = "pre-wrap";   // conservar espacios entre spans
   $("lCur").style.lineHeight = "";
-  $("lCur").style.fontSize = cfg.fs + "vw";
+  // AUTO-FIT: tamaño adaptado a la pantalla + garantizar palabras completas
+  $("lCur").style.fontSize = autoFitSize(text) + "vw";
   if (!eggActive) { $("lCur").style.color = ""; }   // restaurar contraste dinámico
   applyFisheye($("lCur"), text);
   // SUBTÍTULO: backs/paréntesis o TRADUCCIÓN como línea secundaria opaca
