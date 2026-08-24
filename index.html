@@ -39,6 +39,23 @@
   /* SIN transición: colores ABRUPTO en el beat exacto */
   #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
   #pbar{position:absolute;top:0;left:0;height:5px;width:0%;background:rgba(255,255,255,.9);z-index:6;transition:width .2s linear}
+  /* ESPECTRO CRT: barras ecualizador retro abajo (solo fiesta) */
+  #spectrum{position:absolute;left:0;right:0;bottom:0;height:14vh;z-index:3;pointer-events:none;
+    display:none;align-items:flex-end;gap:4px;padding:0 2vw 0 2vw;opacity:.5}
+  #spectrum.on{display:flex}
+  #spectrum i{flex:1;background:linear-gradient(180deg,var(--tc),transparent);border-radius:2px 2px 0 0;
+    min-height:4px;transform-origin:bottom}
+  /* REBOTE AL BEAT: la letra late sutilmente */
+  body.beat-bounce #lyrics .line.main{transition:none}
+  /* QR gigante para votar canciones */
+  #qrOverlay{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.75);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    flex-direction:column;gap:18px;color:#fff;font-family:'SpaceGrotesk',sans-serif;text-align:center}
+  #qrOverlay.on{display:flex}
+  #qrBox{background:#fff;border-radius:20px;padding:24px;box-shadow:0 20px 80px rgba(0,0,0,.6)}
+  #qrHint{font-size:15px;letter-spacing:1px;opacity:.9}
+  /* PARTÍCULAS DE DROP */
+  #fxCanvas{position:absolute;inset:0;z-index:6;pointer-events:none}
 
   /* ====== TEXTURA CRT ====== */
   #crt{position:absolute;inset:0;z-index:7;pointer-events:none;border-radius:2.6vmin;overflow:hidden;
@@ -273,6 +290,15 @@
   </div>
 
   <div id="panel">
+    <h3>🎨 Temas</h3>
+    <div class="row"><label>Tema completo (paleta+CRT+fuente)</label>
+      <select id="themeSel">
+        <option value="classic">🎉 Clásico</option>
+        <option value="vaporwave">🌴 Vaporwave</option>
+        <option value="matrix">💚 Matrix</option>
+        <option value="snes">🎮 Super Nintendo</option>
+      </select></div>
+
     <h3>Letra</h3>
     <div class="row"><label>Tamaño: <span class="val" id="fsVal">7</span></label>
       <input id="fsRange" type="range" min="3" max="16" step="0.5" value="7"></div>
@@ -321,6 +347,15 @@
       </select></div>
     <div class="chk"><input id="moodChk" type="checkbox" checked> Sugerir chill por palabras clave</div>
 
+    <h3>✨ Extras</h3>
+    <div class="chk"><input id="trailsChk" type="checkbox" checked> Estelas de nebulosa (fluido)</div>
+    <div class="chk"><input id="spectrumChk" type="checkbox"> Barras ecualizador retro (fiesta)</div>
+    <div class="chk"><input id="bounceChk" type="checkbox"> Letra con rebote al beat</div>
+    <div class="chk"><input id="dropChk" type="checkbox" checked> Explosión de partículas en drops</div>
+    <div class="chk"><input id="smartChk" type="checkbox" checked> Contraste inteligente por zonas</div>
+    <div class="chk"><input id="qrChk" type="checkbox"> QR para votar canciones (tecla Q)</div>
+    <div class="chk"><input id="transChk" type="checkbox"> Traducción de letras extranjeras</div>
+
     <h3>📺 Retro CRT <span id="crtAll" class="linklike">todo / nada</span></h3>
     <div class="crt-group" id="crtGroup">
     <div class="chk"><input id="scanChk" type="checkbox" checked> Scanlines</div>
@@ -366,6 +401,9 @@
   <div id="syncLed" class="offline" title="Estado de sincronización"><i></i><span id="syncText">OFFLINE</span></div>
   <button id="bigLogin">🎵 CONECTAR CON SPOTIFY</button>
   <div id="channel"><div id="chanStatic"></div><div id="chanBars"></div></div>
+  <canvas id="fxCanvas"></canvas>
+  <div id="spectrum"></div>
+  <div id="qrOverlay"><div id="qrBox"></div><div id="qrHint">Escanea para votar la siguiente canción 🎵</div></div>
   <div id="transOverlay"></div>
 </div>
 
@@ -392,6 +430,21 @@ const PALETTES = {
   sunset: ["hsl(355 95% 58%)", "hsl(20 100% 60%)", "hsl(40 100% 62%)", "hsl(310 75% 60%)", "hsl(280 80% 62%)"],
   ocean:  ["hsl(200 95% 45%)", "hsl(180 90% 42%)", "hsl(220 90% 55%)", "hsl(165 85% 48%)", "hsl(240 80% 60%)"],
 };
+/* TEMAS COMPLETOS: paleta + CRT + fuente + extras en un preset */
+const THEMES = {
+  classic: { name: "🎉 Clásico", palette: "rgb", font: "arcade",
+             scanOn: true, scan: 70, mask: 60, vig: 70, noise: 50,
+             flicker: true, tilt: true, refresh: true, fish: true },
+  vaporwave: { name: "🌴 Vaporwave", palette: "sunset", font: "georgia",
+               scanOn: true, scan: 85, mask: 30, vig: 80, noise: 35,
+               flicker: false, tilt: true, refresh: true, fish: true },
+  matrix: { name: "💚 Matrix", palette: "ocean", font: "courier",
+            scanOn: true, scan: 90, mask: 15, vig: 85, noise: 65,
+            flicker: true, tilt: false, refresh: true, fish: true },
+  snes: { name: "🎮 Super Nintendo", palette: "neon", font: "arcade",
+          scanOn: false, scan: 0, mask: 45, vig: 45, noise: 25,
+          flicker: false, tilt: false, refresh: false, fish: false },
+};
 const CFG_DEFAULTS = {
   fs: 7, font: "arcade", phrase: 4, upper: false,
   stroke: 2, shadow: 50,
@@ -399,6 +452,15 @@ const CFG_DEFAULTS = {
   scan: 70, mask: 60, vig: 70, noise: 50, flicker: true, tilt: true, refresh: true,
   scanOn: true, fish: true, transition: "tv",
   autoMood: true, moodOverride: "auto",
+  // ---- nuevas funciones (todas opcionales) ----
+  theme: "classic",        // tema completo aplicado
+  translate: false,        // línea secundaria traducida
+  smartContrast: true,     // contraste por zonas vs global
+  qrEnabled: false,        // tecla Q muestra QR para votar
+  trails: true,            // estelas de nebulosa en el fluido
+  spectrum: false,         // barras ecualizador retro (solo fiesta)
+  beatBounce: false,       // la letra late con el beat (escala 1.00→1.02)
+  dropFx: true,            // explosión de partículas en el drop
 };
 const cfg = Object.assign({}, CFG_DEFAULTS);
 try { Object.assign(cfg, JSON.parse(localStorage.getItem("fv_cfg") || "{}")); } catch (e) {}
@@ -438,6 +500,26 @@ bindChk("scanChk", "scanOn"); bindChk("fishChk", "fish");
 bindChk("moodChk", "autoMood");
 bindSel("moodSel", "moodOverride"); bindSel("transSel", "transition");
 bindSel("fontSel", "font"); bindSel("ctiming", "timing"); bindSel("cmode", "mode");
+bindSel("themeSel", "theme");
+bindChk("trailsChk", "trails"); bindChk("spectrumChk", "spectrum");
+bindChk("bounceChk", "beatBounce"); bindChk("dropChk", "dropFx");
+bindChk("smartChk", "smartContrast"); bindChk("qrChk", "qrEnabled");
+bindChk("transChk", "translate");
+
+/* ---------- TEMAS COMPLETOS: aplicar preset de golpe ---------- */
+function applyTheme(name) {
+  const th = THEMES[name];
+  if (!th) return;
+  cfg.mode = th.palette; cfg.font = th.font;
+  cfg.scanOn = th.scanOn; cfg.scan = th.scan; cfg.mask = th.mask;
+  cfg.vig = th.vig; cfg.noise = th.noise;
+  cfg.flicker = th.flicker; cfg.tilt = th.tilt; cfg.refresh = th.refresh;
+  cfg.fish = th.fish;
+}
+$("themeSel").addEventListener("change", () => {
+  applyTheme(cfg.theme);
+  save(); applyCfg(); syncAllControls();
+});
 $("testChan").onclick = playChannel;
 $("resetBtn").onclick = () => {
   Object.assign(cfg, CFG_DEFAULTS);
@@ -460,8 +542,13 @@ function syncAllControls() {
     $(id).checked = !!cfg[key];
   });
   [["moodSel","moodOverride"],["transSel","transition"],
-   ["fontSel","font"],["ctiming","timing"],["cmode","mode"]].forEach(([id, key]) => {
+   ["fontSel","font"],["ctiming","timing"],["cmode","mode"],["themeSel","theme"]].forEach(([id, key]) => {
     $(id).value = cfg[key];
+  });
+  [["trailsChk","trails"],["spectrumChk","spectrum"],["bounceChk","beatBounce"],
+   ["dropChk","dropFx"],["smartChk","smartContrast"],["qrChk","qrEnabled"],
+   ["transChk","translate"]].forEach(([id, key]) => {
+    $(id).checked = !!cfg[key];
   });
 }
 $("loginBtn").onclick = () => { location.href = S && S.logged_in ? "/logout" : "/login"; };
@@ -535,7 +622,15 @@ function applyCfg() {
   $("crt").style.display = cfg.scanOn ? "" : "none";   // scanlines OFF = sin capa CRT
   const ly = $("lyrics");
   document.body.classList.toggle("fisheye", !!cfg.fish);   // ojo de pez GLOBAL
+  document.body.classList.toggle("beat-bounce", !!cfg.beatBounce);  // rebote al beat
   ly.classList.toggle("upper", cfg.upper);
+  // espectro CRT: crear barras una vez, mostrar/ocultar según modo y config
+  initSpectrum();
+  $("spectrum").classList.toggle("on", !!cfg.spectrum && !isChill());
+  // QR overlay solo si está activado
+  if (!cfg.qrEnabled) $("qrOverlay").classList.remove("on");
+  // canvas de partículas listo para drops
+  initFxCanvas();
   applyEggFont();
   // Aplicar el modo visual inmediatamente al cambiar el selector
   if (S && S.track) {
@@ -546,6 +641,121 @@ function applyCfg() {
     if (isChill()) startFluid();
   }
   updateMoodSwitch();
+}
+
+/* ---------- ESPECTRO DE BARRAS CRT ---------- */
+let _specBars = [];
+function initSpectrum() {
+  if (_specBars.length) return;
+  const sp = $("spectrum");
+  for (let i = 0; i < 24; i++) {
+    const b = document.createElement("i");
+    sp.appendChild(b);
+    _specBars.push({ el: b, ph: Math.random() * Math.PI * 2, spd: 1.5 + Math.random() * 2.5 });
+  }
+}
+function tickSpectrum(t, energy) {
+  // barras sintéticas al ritmo: altura pseudo-aleatoria suavizada por seno
+  for (const b of _specBars) {
+    const v = 0.25 + 0.35 * Math.abs(Math.sin(b.ph + t * b.spd)) + energy * 0.35;
+    b.el.style.height = Math.min(100, v * 100) + "%";
+  }
+}
+
+/* ---------- 💥 EXPLOSIÓN DE PARTÍCULAS EN DROPS ---------- */
+let _fxParts = [], _fxRAF = null;
+function initFxCanvas() {
+  const cv = $("fxCanvas");
+  if (cv.width !== innerWidth) { cv.width = innerWidth; cv.height = innerHeight; }
+}
+function explodeDrop() {
+  initFxCanvas();
+  const pal = PALETTES[cfg.mode] || PALETTES.rgb;
+  // 60 partículas desde el centro con colores de la paleta
+  for (let i = 0; i < 60; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const spd = 3 + Math.random() * 9;
+    _fxParts.push({
+      x: innerWidth / 2, y: innerHeight / 2,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 3,
+      life: 1,
+      color: pal[Math.floor(Math.random() * pal.length)],
+      size: 3 + Math.random() * 6,
+    });
+  }
+  if (!_fxRAF) _fxLoop();
+}
+function _fxLoop() {
+  _fxRAF = requestAnimationFrame(_fxLoop);
+  const cv = $("fxCanvas");
+  const ctx = cv.getContext("2d");
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (!_fxParts.length) { cancelAnimationFrame(_fxRAF); _fxRAF = null; return; }
+  _fxParts = _fxParts.filter(p => p.life > 0);
+  for (const p of _fxParts) {
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.25;                       // gravedad
+    p.vx *= 0.985; p.life -= 0.012;
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* ---------- 📱 QR GIGANTE (tecla Q) ---------- */
+function toggleQR() {
+  if (!cfg.qrEnabled) return;
+  const ov = $("qrOverlay");
+  if (ov.classList.contains("on")) { ov.classList.remove("on"); return; }
+  // QR simple con la URL de Spotify del track actual (api.qrserver.com, gratis)
+  const url = S && S.track && S.track.id
+    ? "https://open.spotify.com/track/" + S.track.id : "https://open.spotify.com/";
+  $("qrBox").innerHTML =
+    '<img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data='
+    + encodeURIComponent(url) + '" width="300" height="300" alt="QR">';
+  ov.classList.add("on");
+}
+document.addEventListener("keydown", e => {
+  if (e.key === "q" || e.key === "Q") toggleQR();
+  if (e.key === "Escape") $("qrOverlay").classList.remove("on");
+});
+
+/* ---------- 🌍 TRADUCCIÓN de letras extranjeras (línea secundaria) ----------
+   MyMemory API gratuita. Caché permanente por texto origen. */
+const _trCache = {};
+async function translateLine(text) {
+  if (!cfg.translate || !text) return "";
+  if (_trCache[text]) return _trCache[text];
+  try {
+    const r = await fetch("https://api.mymemory.translated.net/get?q="
+      + encodeURIComponent(text) + "&langpair=en|es", { cache: "no-store" });
+    const d = await r.json();
+    const tr = ((d.responseData || {}).translatedText || "").trim();
+    if (tr && !/MYMEMORY WARNING/i.test(tr)) _trCache[text] = tr;
+    return _trCache[text] || "";
+  } catch (e) { return ""; }
+}
+
+/* ---------- CONTRASTE POR ZONAS: medir la franja real donde va la letra ---------- */
+/* CONTRASTE GLOBAL: promedio de TODO el canvas (modo simple) */
+function setFluidContrastGlobal() {
+  const cv = $("fluidCanvas");
+  if (!cv.width) return;
+  try {
+    const ctx = cv.getContext("2d");
+    const strip = ctx.getImageData(0, 0, cv.width, cv.height).data;
+    let sum = 0, n = 0;
+    for (let i = 0; i < strip.length; i += 4*80) {
+      sum += 0.2126*strip[i] + 0.7152*strip[i+1] + 0.0722*strip[i+2];
+      n++;
+    }
+    const avgLum = sum / Math.max(1, n) / 255;
+    const dark = "#101018", white = "#ffffff";
+    const cur = document.documentElement.style.getPropertyValue("--tc") || "";
+    if (cur === dark) setTextColor(avgLum > 0.38 ? dark : white);
+    else setTextColor(avgLum > 0.52 ? dark : white);
+  } catch (e) { /* canvas tainted */ }
 }
 
 /* ---------- 🐰 easter egg EOO (Bad Bunny): letra real con efectos especiales ---------- */
@@ -688,11 +898,24 @@ function setLyric(text, back) {
   $("lCur").style.fontSize = cfg.fs + "vw";
   if (!eggActive) { $("lCur").style.color = ""; }   // restaurar contraste dinámico
   applyFisheye($("lCur"), text);
-  // SUBTÍTULO: backs/paréntesis como línea secundaria opaca
+  // SUBTÍTULO: backs/paréntesis o TRADUCCIÓN como línea secundaria opaca
   const backEl = $("lBack");
   if (back) {
     applyFisheye(backEl, back);
     backEl.style.display = "block";
+  } else if (cfg.translate && /[a-z]{3,}/i.test(text)) {
+    // sin back: intentar traducción (async; cuando llegue, mostrar si es útil)
+    backEl.textContent = "…";
+    backEl.style.display = "block";
+    translateLine(text).then(tr => {
+      if (tr && tr.toLowerCase() !== (text || "").toLowerCase()) {
+        applyFisheye(backEl, tr);
+        backEl.style.display = "block";
+      } else {
+        backEl.textContent = "";
+        backEl.style.display = "none";
+      }
+    });
   } else {
     backEl.textContent = "";
     backEl.style.display = "none";
@@ -946,6 +1169,19 @@ function frame() {
     if (S.track.duration_ms) {
       $("pbar").style.width = Math.min(100, t / (S.track.duration_ms / 1000) * 100) + "%";
     }
+    // REBOTE AL BEAT: la letra late 1.00→1.02 en cada beat (escala sobre el bloque)
+    if (cfg.beatBounce && playing) {
+      const B0 = S.beats || [];
+      let lastBeatT = 0;
+      for (let i = beatPtr - 1; i >= 0 && i < B0.length; i--) { if (B0[i] <= t) { lastBeatT = B0[i]; break; } }
+      const sinceBeat = Math.max(0, t - lastBeatT);
+      const decay = Math.exp(-sinceBeat * 6);            // golpe que decae rápido
+      $("lCur").style.transform = `scale(${(1 + decay * 0.02).toFixed(4)})`;
+    } else {
+      $("lCur").style.transform = "";
+    }
+    // ESPECTRO CRT: animar barras solo en modo fiesta
+    if (cfg.spectrum && !isChill() && _specBars.length) tickSpectrum(t, fluidEnergy);
     if (playing && isChill()) {
       // MODO CHILL: los blobs pulsan con cada beat de la canción
       const B = S.beats || [];
@@ -957,7 +1193,11 @@ function frame() {
       } else {
         while (beatPtr < B.length && B[beatPtr] <= t) { if (cfg.pulseWhite) pulse(); beatPtr++; }
         if (cfg.timing === "sections") {
-          while (secPtr < SE.length && SE[secPtr] <= t) { onColor(); dropFlash(); secPtr++; }
+          while (secPtr < SE.length && SE[secPtr] <= t) {
+            onColor(); dropFlash();
+            if (cfg.dropFx) explodeDrop();   // 💥 partículas del color de la portada
+            secPtr++;
+          }
         } else {
           while (barPtr < BR.length && BR[barPtr] <= t) {
             const err = t - BR[barPtr];
@@ -1122,13 +1362,23 @@ function fluidLoop() {
   const boost = fluidEnergy * 0.30 + breathe;
 
   // fondo: mezcla viva de 2 colores de la paleta (diagonal), NUNCA gris plano
-  ctx.clearRect(0, 0, W, H);
+  // ESTELAS: con cfg.trails, en vez de limpiar se desvanece (motion blur nebulosa)
+  if (cfg.trails) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(0,0,0,0.06)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";   // acumular luz sobre las estelas
+  } else {
+    ctx.clearRect(0, 0, W, H);
+  }
   const P = (coverPalette || [[90,60,140],[160,80,120]]).map(c => adjustTone(c));
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, `rgb(${P[0]})`);
   bg.addColorStop(1, `rgb(${P[P.length-1]})`);
+  ctx.globalAlpha = cfg.trails ? 0.10 : 1;      // el gradiente base casi no pinta con estelas
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 1;
 
   // blobs: mezcla "screen" = siempre aclara, jamás ensucia a gris
   ctx.globalCompositeOperation = "screen";
@@ -1198,11 +1448,16 @@ function setTextColor(tc) {
 /* Contraste del fluido: medir el brillo REAL del canvas y elegir texto que
    nunca sea invisible (ni negro sobre negro ni blanco sobre blanco). */
 function setFluidContrast() {
+  // smartContrast: medir SOLO la franja donde va la letra (por zonas)
+  if (cfg.smartContrast) return setFluidContrastZone();
+  return setFluidContrastGlobal();
+}
+/* CONTRASTE POR ZONAS: medir la franja real de la letra (35%-65% vertical) */
+function setFluidContrastZone() {
   const cv = $("fluidCanvas");
   if (!cv.width) return;
-  const ctx = cv.getContext("2d");
-  // muestrear la franja central donde va la letra (cada ~40px)
   try {
+    const ctx = cv.getContext("2d");
     const strip = ctx.getImageData(0, cv.height*0.35, cv.width, cv.height*0.3).data;
     let sum = 0, n = 0;
     for (let i = 0; i < strip.length; i += 4*40) {
@@ -1210,17 +1465,19 @@ function setFluidContrast() {
       n++;
     }
     const avgLum = sum / Math.max(1, n) / 255;
-    // HISTÉRESIS anti-parpadeo: para pasar a oscuro hay que superar 0.52 y
-    // para volver a blanco bajar de 0.38. En la zona muerta se mantiene el
-    // color actual → cero alternancias cuando los blobs rondan el umbral.
-    const dark = "#101018", white = "#ffffff";
-    const cur = document.documentElement.style.getPropertyValue("--tc") || "";
-    if (cur === dark) {
-      setTextColor(avgLum > 0.38 ? dark : white);   // seguir oscuro hasta bajar de .38
-    } else {
-      setTextColor(avgLum > 0.52 ? dark : white);   // exigir claridad real para oscurecer
-    }
-  } catch (e) { /* canvas tainted: mantener contraste actual */ }
+    applyHysteresis(avgLum);
+  } catch (e) { /* canvas tainted */ }
+}
+
+/* HISTÉRESIS anti-parpadeo compartida */
+function applyHysteresis(avgLum) {
+  const dark = "#101018", white = "#ffffff";
+  const cur = document.documentElement.style.getPropertyValue("--tc") || "";
+  if (cur === dark) {
+    setTextColor(avgLum > 0.38 ? dark : white);   // seguir oscuro hasta bajar de .38
+  } else {
+    setTextColor(avgLum > 0.52 ? dark : white);   // exigir claridad real para oscurecer
+  }
 }
 
 function onColor() {
