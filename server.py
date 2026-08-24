@@ -974,6 +974,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 self._send(200, json.dumps({"queue": [], "error": str(e)}),
                            "application/json; charset=utf-8")
+        elif p == "/tv-frame-clean.png":
+            try:
+                with open(os.path.join(BASE, "tv-frame-clean.png"), "rb") as f:
+                    self._send(200, f.read(), "image/png")
+            except Exception:
+                self._send(404, "no encontrado", "text/plain")
         elif p == "/login":
             self._login()
         elif p.startswith("/fonts/"):

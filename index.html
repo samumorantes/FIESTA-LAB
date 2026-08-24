@@ -19,15 +19,21 @@
   @keyframes powerOn{0%{opacity:0}18%{opacity:.7}30%{opacity:.12}44%{opacity:.95}55%{opacity:.25}70%{opacity:1}100%{opacity:1}}
   @keyframes crtFlicker{0%,100%{opacity:1}93.5%{opacity:1}94%{opacity:.9}94.5%{opacity:1}96.5%{opacity:.95}97%{opacity:1}}
 
-  /* ====== PANTALLA: cristal curvado + inclinación + deriva analógica ====== */
-  #screen{position:absolute;inset:0;z-index:0;border-radius:2.6vmin;overflow:hidden;
+  /* ====== MUEBLE DE TV VINTAGE: IMAGEN REAL (tv-frame.png) ENCIMA ======
+     La imagen del marco va por ENCIMA de todo lo visual; su hueco transparente
+     deja ver la app. Coordenadas del hueco medidas sobre el PNG:
+     left 8.51% · top 9.56% · right 8.57% · bottom 9.66% */
+  #tvFrame{position:absolute;inset:0;z-index:20;pointer-events:none;
+    background:url("tv-frame-clean.png") no-repeat center / contain}
+  /* la pantalla se posiciona EXACTAMENTE en el hueco transparente del marco */
+  #screen{position:absolute;left:8.51%;top:9.56%;right:8.57%;bottom:9.66%;z-index:0;overflow:hidden;
     transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
     transform-origin:50% 45%;
-    will-change:filter}
+    border-radius:.6vmin}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
   /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
-  #lensTarget{position:absolute;inset:0;pointer-events:none}
+  #lensTarget{position:absolute;inset:3.2vmin;pointer-events:none}
   #screen.tilt-off{transform:none;animation:none}
   @keyframes screenDrift{
     0%{transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg) translate(0,0)}
@@ -85,14 +91,14 @@
   #refresh.hidden-refresh{display:none}
   @keyframes roll{0%{top:-18vh;opacity:0}7%{opacity:1}93%{opacity:1}100%{top:118vh;opacity:0}}
 
-  #top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:16px 76px 16px 20px;color:var(--tc);transition:color .2s;z-index:5;background:linear-gradient(rgba(0,0,0,.28),transparent)}
+  #top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:3vmin 8vmin 16px 6vmin;color:var(--tc);transition:color .2s;z-index:21;background:linear-gradient(rgba(0,0,0,.28),transparent)}
   #cover{width:54px;height:54px;border-radius:6px;object-fit:cover;background:rgba(255,255,255,.15)}
   #meta{min-width:0}
   #song{font-family:'SpaceGrotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.5)}
   #artist{font-size:13px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.5)}
   #badge{position:absolute;top:16px;right:62px;font-size:11px;font-weight:700;letter-spacing:1.5px;padding:5px 10px;border-radius:2px;background:rgba(0,0,0,.45);color:#ffd54a;z-index:5;display:none;font-family:'SpaceGrotesk',sans-serif}
 
-  #gear{position:absolute;top:10px;right:12px;width:40px;height:40px;border-radius:2px;border:none;background:rgba(0,0,0,.38);color:#fff;font-size:19px;cursor:pointer;z-index:10}
+  #gear{position:absolute;top:2.4vmin;right:4.6vmin;width:40px;height:40px;border-radius:2px;border:none;background:rgba(0,0,0,.38);color:#fff;font-size:19px;cursor:pointer;z-index:22}
 
   /* ====== SELECTOR RÁPIDO FIESTA/FLUIDO (eliminado → tecla F) ====== */
   /* toast: aviso efímero de modo */
@@ -143,7 +149,7 @@
   body.ui-hidden #source, body.ui-hidden #syncLed, body.ui-hidden #queueTicker{opacity:0;pointer-events:none}
 
   /* ====== TICKER DE COLA (abajo-izquierda) ====== */
-  #queueTicker{position:absolute;left:18px;bottom:14px;z-index:10;display:flex;align-items:center;gap:9px;
+  #queueTicker{position:absolute;left:6vmin;bottom:4.4vmin;z-index:21;display:flex;align-items:center;gap:9px;
     max-width:44vw;font-family:'SpaceGrotesk',sans-serif;color:var(--tc);text-shadow:0 1px 5px rgba(0,0,0,.5);
     padding:7px 13px;border-radius:14px;background:rgba(0,0,0,.22);
     -webkit-backdrop-filter:blur(14px) saturate(160%);backdrop-filter:blur(14px) saturate(160%);
@@ -185,7 +191,7 @@
   #lineNone{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:8vw;font-size:calc(var(--fs)*.5);color:var(--tc);z-index:2;font-family:'SpaceGrotesk',sans-serif;font-weight:700;transition:color .15s;pointer-events:none}
   #msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:8vw;font-size:clamp(18px,3.4vw,34px);color:var(--tc);z-index:3;font-family:'SpaceGrotesk',sans-serif;font-weight:700;line-height:1.6;white-space:pre-line;transition:color .15s;text-shadow:0 0 3vmin rgba(255,255,255,.14);pointer-events:none}
   #source{position:absolute;bottom:9px;left:0;right:0;text-align:center;font-size:11px;opacity:.55;color:var(--tc);z-index:4;font-family:'SpaceGrotesk',sans-serif;letter-spacing:1.5px;transition:color .15s;text-shadow:0 1px 6px rgba(0,0,0,.45)}
-  #syncLed{position:absolute;right:17px;bottom:15px;z-index:10;display:flex;align-items:center;gap:7px;
+  #syncLed{position:absolute;right:5.4vmin;bottom:4.6vmin;z-index:21;display:flex;align-items:center;gap:7px;
     font:700 10px/1 'SpaceGrotesk',sans-serif;letter-spacing:1px;color:var(--tc);text-shadow:0 1px 5px #000}
   #syncLed i{width:10px;height:10px;border-radius:50%;background:#ff3647;box-shadow:0 0 7px #ff3647}
   #syncLed.waiting i{background:#ffc43d;box-shadow:0 0 7px #ffc43d}
@@ -271,6 +277,7 @@
 </style>
 </head>
 <body>
+<div id="tvFrame"></div>
 <div id="screen">
  <div id="lensTarget">
   <div id="bg"></div>
@@ -1690,6 +1697,10 @@ function applyHysteresis(avgLum) {
 }
 
 function onColor() {
+  if (isChill()) {   // el fluido ES el fondo: no pisarlo con color plano
+    setContrast("#ffffff");
+    return;
+  }
   const c = newColor();
   $("bg").style.backgroundColor = c;
   setContrast(c.startsWith("#") ? hexToRgb(c) : c);
