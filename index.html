@@ -873,11 +873,11 @@ function applyFisheye(el, text) {
     const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
     acc += widths[i];
     const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
-    // proyección esférica SUAVE: curva visible sin que los glifos se monten
-    const k = Math.cos(t * Math.PI / 2.8);        // cae suave hacia los bordes
-    const scale = 0.88 + 0.12 * k;                // 1.0 centro → 0.93 borde
-    const lift = -t * t * 4;                      // curva vertical sutil
-    const rotY = t * -4;                          // giro mínimo (evita solape)
+    // proyección esférica FUERTE (estilo portada TARDE): centro gigante, bordes pequeños
+    const k = Math.cos(t * Math.PI / 2.0);        // caída completa hasta los bordes
+    const scale = 0.62 + 0.38 * k;                // 1.0 centro → 0.62 borde (~30% más grande al centro)
+    const lift = -t * t * 6;                      // curva vertical sutil
+    const rotY = t * -6;                          // giro lateral en los extremos
     span.style.display = "inline-block";
     // kerning: SOLO entre caracteres de la misma palabra (los espacios ya separan)
     if (ch !== " " && i + 1 < n && chars[i + 1] !== " ") {
