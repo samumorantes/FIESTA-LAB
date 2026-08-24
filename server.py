@@ -277,7 +277,7 @@ def parse_lrc(text):
 def split_phrases(lines, duration, max_words=4):
     """Convierte líneas largas en FRASES CORTAS (máx. max_words palabras),
     repartiendo el tiempo de la línea original entre las frases."""
-    MAX_W = max(2, min(int(max_words), 8))
+    MAX_W = max(1, min(int(max_words), 8))
     out = []
     for i, ln in enumerate(lines):
         start = ln["t"]
@@ -844,7 +844,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             mw = 4
             try:
                 qs = urllib.parse.parse_qs(u.query)
-                mw = max(2, min(int(qs.get("mw", ["4"])[0]), 8))
+                mw = max(1, min(int(qs.get("mw", ["4"])[0]), 8))
             except Exception:
                 mw = 4
             force = "force" in (u.query or "")

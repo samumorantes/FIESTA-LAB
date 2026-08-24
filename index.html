@@ -344,7 +344,7 @@
         <option value="system">Sistema</option>
       </select></div>
     <div class="row"><label>Palabras por frase: <span class="val" id="phraseVal">4</span></label>
-      <input id="phraseRng" type="range" min="2" max="8" step="1" value="4"></div>
+      <input id="phraseRng" type="range" min="1" max="8" step="1" value="4"></div>
     <div class="row"><label>Espacio entre palabras: <span class="val" id="wordSpVal">1.0×</span></label>
       <input id="wordSpRng" type="range" min="0" max="3" step="0.1" value="1"></div>
     <div class="row"><label>Intensidad ojo de pez: <span class="val" id="lensVal">18</span></label>
@@ -567,10 +567,16 @@ function bindSel(id, key) {
   el.onchange = e => { cfg[key] = e.target.value; save(); applyCfg(); };
 }
 bindRange("fsRange", "fs", "fsVal");
+// TAMAÑO en vivo: repintar la letra actual al instante (sin esperar nueva frase)
+(function(){ const el=$("fsRange"); const prev=el.oninput;
+  el.oninput = e => { prev(e); if (lastShown) setLyric(lastShown, (S.lyrics||[])[lineIdx] ? (S.lyrics[lineIdx].back) : null); }; })();
 // phrase usa bindRangeReload: necesita recargar /api/state para repartir las frases
 (function(){ const el=$("phraseRng"); el.oninput = null; })();
 bindRangeReload("phraseRng", "phrase", "phraseVal", v => v + " palabras");
 bindRange("wordSpRng", "wordSpacing", "wordSpVal", v => v.toFixed(1) + "×");
+// ESPACIO entre palabras en vivo: repintar la línea actual al mover el slider
+(function(){ const el=$("wordSpRng"); const prev=el.oninput;
+  el.oninput = e => { prev(e); if (lastShown) setLyric(lastShown, (S.lyrics||[])[lineIdx] ? (S.lyrics[lineIdx].back) : null); }; })();
 bindRange("lensRng", "lensStrength", "lensVal");
 // el slider de lente reconstruye el mapa con la nueva amplitud
 (function(){ const el=$("lensRng"); const prev=el.oninput;
@@ -883,8 +889,11 @@ function applyCfg() {
   // canvas de partículas listo para drops
   initFxCanvas();
   applyEggFont();
-  // REGLAS POR CANCIÓN (Die For You → vaporwave fluido) antes del modo normal
-  if (!applyTrackRules() && S && S.track) {
+  // REGLAS POR CANCIÓN (Die For You → vaporwave fluido) ANTES de presets,
+  // y presets SIEMPRE (aunque applyTrackRules haya actuado: un preset puede
+  // querer sobreescribir incluso la canción especial).
+  applyTrackRules();
+  if (S && S.track) {
     checkPresets();   // presets guardados por canción/artista/álbum (prioridad máxima)
     if (_presetAppliedFor !== S.track.id) {
       const serverMood = S.mood || "party";
@@ -1271,7 +1280,13 @@ function applyFisheye(el, text) {
 function setLyric(text, back) {
   $("lCur").style.whiteSpace = "pre-wrap";   // conservar espacios entre spans
   $("lCur").style.lineHeight = "";
-  $("lCur").style.fontSize = cfg.fs + "vw";
+  // TAMAÑO EN VIVO: el inline gana a --fs, pero al cambiar el slider la línea
+  // actual no se redibuja → forzar reflow repintando con el nuevo tamaño YA.
+  const fsPx = "calc(" + cfg.fs + "vw)";
+  $("lCur").style.fontSize = "";
+  $("lBack").style.fontSize = "";   // subtítulo vuelve a heredar calc(var(--fs)*.5)
+  document.documentElement.style.setProperty("--fs", cfg.fs + "vw");
+  $("lCur").style.fontSize = fsPx;
   if (!eggActive) { $("lCur").style.color = "" }   // restaurar contraste dinámico
   // con la LENTE activa el texto va PLANO: la deformación la hace el filtro por píxel
   applyLens();
