@@ -20,7 +20,7 @@
   @keyframes crtFlicker{0%,100%{opacity:1}93.5%{opacity:1}94%{opacity:.9}94.5%{opacity:1}96.5%{opacity:.95}97%{opacity:1}}
 
   /* ====== PANTALLA: cristal curvado + inclinación + deriva analógica ====== */
-  #screen{position:fixed;inset:0;z-index:0;border-radius:2.6vmin;overflow:hidden;
+  #screen{position:absolute;inset:0;z-index:0;border-radius:2.6vmin;overflow:hidden;
     transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
     transform-origin:50% 45%;
     animation:screenDrift 11s ease-in-out infinite alternate}
