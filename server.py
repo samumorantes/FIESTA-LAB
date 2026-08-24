@@ -849,12 +849,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 mw = 4
             force = "force" in (u.query or "")
             if force:
-                # cambio manual de palabras/frase: invalida cachés para re-repartir YA
+                # cambio manual de palabras/frase: invalida TODAS las cachés de
+                # letras para que el reparto se recalcule con el nuevo mw
                 _player_cache["data"] = None
                 _player_cache["mw"] = -1
-                for k in [k for k in _track_cache if k.endswith("|%d" % mw)]:
-                    _track_cache.pop(k, None)
-                _sync_cache["lyrics"] = []   # el sync re-servirá las nuevas frases
+                _track_cache.clear()
+                _sync_cache["lyrics"] = []
             try:
                 self._send(200, json.dumps(build_state(mw), ensure_ascii=False),
                            "application/json; charset=utf-8")
@@ -862,7 +862,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send(500, json.dumps({"error": str(e)}, ensure_ascii=False),
                            "application/json; charset=utf-8")
         elif p == "/api/sync":
-            global _sync_cache
             try:
                 _t = time.time()
                 if CLIENT_ID and load_tokens():
