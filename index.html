@@ -704,7 +704,9 @@ function tickSpectrum(t, energy) {
 let _fxParts = [], _fxRAF = null;
 function initFxCanvas() {
   const cv = $("fxCanvas");
-  if (cv.width !== innerWidth) { cv.width = innerWidth; cv.height = innerHeight; }
+  // resolución reducida: las partículas son cuadrados pequeños, se ven igual
+  const w = Math.round(innerWidth / 2), h = Math.round(innerHeight / 2);
+  if (cv.width !== w) { cv.width = w; cv.height = h; }
 }
 function explodeDrop() {
   initFxCanvas();
@@ -1315,21 +1317,31 @@ function frame() {
       }
     }
     if (S.track.duration_ms) {
-      $("pbar").style.width = Math.min(100, t / (S.track.duration_ms / 1000) * 100) + "%";
+      // barra de progreso a ~10 Hz (no necesita más)
+      if (!frame._pb || performance.now() - frame._pb > 100) {
+        frame._pb = performance.now();
+        $("pbar").style.width = Math.min(100, t / (S.track.duration_ms / 1000) * 100) + "%";
+      }
     }
-    // REBOTE AL BEAT: la letra late 1.00→1.02 en cada beat (escala sobre el bloque)
+    // REBOTE AL BEAT: throttle a ~20 Hz (imperceptible, evita recalcular cada frame)
     if (cfg.beatBounce && playing) {
-      const B0 = S.beats || [];
-      let lastBeatT = 0;
-      for (let i = beatPtr - 1; i >= 0 && i < B0.length; i--) { if (B0[i] <= t) { lastBeatT = B0[i]; break; } }
-      const sinceBeat = Math.max(0, t - lastBeatT);
-      const decay = Math.exp(-sinceBeat * 6);            // golpe que decae rápido
-      $("lCur").style.transform = `scale(${(1 + decay * 0.02).toFixed(4)})`;
+      if (!frame._bb || performance.now() - frame._bb > 50) {
+        frame._bb = performance.now();
+        const B0 = S.beats || [];
+        let lastBeatT = 0;
+        for (let i = beatPtr - 1; i >= 0 && i < B0.length; i--) { if (B0[i] <= t) { lastBeatT = B0[i]; break; } }
+        const sinceBeat = Math.max(0, t - lastBeatT);
+        const decay = Math.exp(-sinceBeat * 6);
+        $("lCur").style.transform = `scale(${(1 + decay * 0.02).toFixed(4)})`;
+      }
     } else {
       $("lCur").style.transform = "";
     }
     // ESPECTRO CRT: animar barras solo en modo fiesta
-    if (cfg.spectrum && !isChill() && _specBars.length) tickSpectrum(t, fluidEnergy);
+    if (cfg.spectrum && !isChill() && _specBars.length) {
+      // espectro a ~20 Hz: suficiente para barras, 3x menos writes de estilo
+      if (!frame._sp || performance.now() - frame._sp > 50) { frame._sp = performance.now(); tickSpectrum(t, fluidEnergy); }
+    }
     if (playing && isChill()) {
       // MODO CHILL: los blobs pulsan con cada beat de la canción
       const B = S.beats || [];
