@@ -73,11 +73,9 @@
     background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.5' numOctaves='2' stitchTiles='stitch'/></filter><rect width='200' height='200' filter='url(%23n)'/></svg>");
     animation:noiseShift .4s steps(5) infinite}
   @keyframes noiseShift{0%{background-position:0 0}20%{background-position:-90px 44px}40%{background-position:63px -72px}60%{background-position:-44px 82px}80%{background-position:104px 31px}100%{background-position:0 0}}
-  /* LENTE GLOBAL: capa que replica el contenido de la pantalla y lo deforma por píxel,
-     ENCIMA del CRT/ruido (los pixeles del efecto TV también se deforman) */
-  #lensAll{position:absolute;inset:0;z-index:9;pointer-events:none;display:none;
-    backdrop-filter:url(#lens);
-    -webkit-backdrop-filter:url(#lens)}
+  /* LENTE GLOBAL: el filtro SVG se aplica al contenedor COMPLETO de la pantalla
+     (#screen), así la letra + CRT + ruido se deforman juntos por píxel */
+  #screen.lens-on{filter:url(#lens)}
   #refresh{position:absolute;left:0;right:0;height:13vh;z-index:8;pointer-events:none;opacity:0;
     background:linear-gradient(180deg,transparent,rgba(255,255,255,.08) 42%,rgba(255,255,255,.17) 50%,rgba(255,255,255,.08) 58%,transparent);
     animation:roll 8s linear infinite}
@@ -278,7 +276,6 @@
   <div id="flash"></div>
   <div id="crt"></div>
   <div id="noise"></div>
-  <div id="lensAll"></div>
   <div id="refresh"></div>
   <div id="pbar"></div>
 
@@ -934,16 +931,14 @@ function buildLens() {
   _lensReady = true;
 }
 function applyLens() {
-  const ly = $("lyrics");
-  const all = $("lensAll");
+  const sc = $("screen");
   if (cfg.fish && !eggActive) {
-    if (!_lensReady) buildLens();
-    // lente GLOBAL sobre TODO (letra + CRT + ruido); la letra no lleva filtro propio
-    all.style.display = "block";
-    ly.style.filter = "";
+    // reconstruir SIEMPRE con la amplitud actual del slider antes de activar
+    _lensReady = false;
+    buildLens();
+    sc.classList.add("lens-on");
   } else {
-    all.style.display = "none";
-    ly.style.filter = "";
+    sc.classList.remove("lens-on");
   }
 }
 addEventListener("resize", () => { _lensReady = false; applyLens(); }, { passive: true });
