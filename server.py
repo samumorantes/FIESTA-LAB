@@ -843,9 +843,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif p == "/api/state":
             mw = 4
             try:
-                mw = max(2, min(int(urllib.parse.parse_qs(u.query).get("mw", ["4"])[0]), 8))
+                qs = urllib.parse.parse_qs(u.query)
+                mw = max(2, min(int(qs.get("mw", ["4"])[0]), 8))
             except Exception:
                 mw = 4
+            force = "force" in (u.query or "")
+            if force:
+                # cambio manual de palabras/frase: invalida cachés para re-repartir YA
+                _player_cache["data"] = None
+                _player_cache["mw"] = -1
             try:
                 self._send(200, json.dumps(build_state(mw), ensure_ascii=False),
                            "application/json; charset=utf-8")

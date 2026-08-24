@@ -476,7 +476,28 @@ function bindRange(id, key, valId, fmt) {
   const el = $(id);
   el.value = cfg[key];
   el.oninput = e => { cfg[key] = +e.target.value; $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key]; save(); applyCfg(); };
-  if (valId) $(valId).textContent = cfg[key];
+  if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
+}
+// bindRange que además fuerza recarga del estado del server (para "palabras por frase")
+function bindRangeReload(id, key, valId, fmt) {
+  let _t = null;
+  const el = $(id);
+  el.value = cfg[key];
+  el.oninput = e => {
+    cfg[key] = +e.target.value;
+    $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
+    save();
+    // recarga con debounce: evita machacar la API mientras arrastras
+    clearTimeout(_t);
+    _t = setTimeout(async () => {
+      try {
+        const r = await fetch("/api/state?mw=" + cfg.phrase + "&force=1", { cache: "no-store" });
+        const ns = await r.json();
+        S = ns; lineIdx = -1; lastShown = null;   // fuerza re-render completo
+      } catch (err) {}
+    }, 400);
+  };
+  if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
 }
 function bindChk(id, key) {
   const el = $(id);
@@ -489,7 +510,9 @@ function bindSel(id, key) {
   el.onchange = e => { cfg[key] = e.target.value; save(); applyCfg(); };
 }
 bindRange("fsRange", "fs", "fsVal");
-bindRange("phraseRng", "phrase", "phraseVal", v => v + " palabras");
+// phrase usa bindRangeReload: necesita recargar /api/state para repartir las frases
+(function(){ const el=$("phraseRng"); el.oninput = null; })();
+bindRangeReload("phraseRng", "phrase", "phraseVal", v => v + " palabras");
 bindRange("wordSpRng", "wordSpacing", "wordSpVal", v => v.toFixed(1) + "×");
 bindRange("scanRng", "scan", "scanVal");
 bindRange("maskRng", "mask", "maskVal");
@@ -850,7 +873,24 @@ function applyEggFont() {
    También se elevan/hunden un pelín siguiendo la curvatura vertical.
    Es una deformación ESTÁTICA: solo se recalcula al cambiar la letra. */
 function applyFisheye(el, text) {
-  if (!cfg.fish || eggActive) { el.textContent = text; return; }
+  // SIN fisheye: aplicar igualmente el espaciado manual entre palabras
+  if (!cfg.fish || eggActive) {
+    const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
+    el.textContent = "";
+    text.split(/(\s+)/).forEach(part => {
+      if (/^\s+$/.test(part)) {
+        const sp = document.createElement("span");
+        sp.textContent = "\u00A0\u00A0";
+        sp.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
+        sp.style.marginRight = (0.1 * ws).toFixed(3) + "em";
+        sp.style.display = "inline-block";
+        el.appendChild(sp);
+      } else if (part) {
+        el.appendChild(document.createTextNode(part));
+      }
+    });
+    return;
+  }
   el.textContent = "";
   const frag = document.createDocumentFragment();
   const chars = [...text];
@@ -873,12 +913,21 @@ function applyFisheye(el, text) {
     const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
     acc += widths[i];
     const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
-    // proyección esférica FUERTE (estilo portada TARDE): centro gigante, bordes pequeños
-    const k = Math.cos(t * Math.PI / 2.0);        // caída completa hasta los bordes
-    const scale = 0.62 + 0.38 * k;                // 1.0 centro → 0.62 borde (~30% más grande al centro)
-    const lift = -t * t * 6;                      // curva vertical sutil
-    const rotY = t * -6;                          // giro lateral en los extremos
+    // proyección esférica REAL: cada glifo se DEFORMA (escala X/Y distinta,
+    // inclinación y perspectiva), no solo cambia de tamaño
+    const k = Math.cos(t * Math.PI / 2.0);            // 1 centro → 0 bordes
+    const sq = 1 - t * t;                              // factor esférico
+    const scaleX = 0.55 + 0.45 * sq;                   // ancho se comprime en los bordes
+    const scaleY = 0.62 + 0.38 * sq;                   // alto también, pero menos
+    const lift = -t * t * 8;                           // curva vertical del "balón"
+    const rotY = t * -10;                              // giro 3D lateral fuerte
+    const skew = t * 4;                                // inclinación hacia el centro
     span.style.display = "inline-block";
+    span.style.transformOrigin = "center bottom";
+    span.style.transform =
+      `perspective(300px) rotateY(${rotY.toFixed(1)}deg) ` +
+      `skewX(${skew.toFixed(1)}deg) scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) ` +
+      `translateY(${lift.toFixed(1)}%)`;
     // kerning: SOLO entre caracteres de la misma palabra (los espacios ya separan)
     if (ch !== " " && i + 1 < n && chars[i + 1] !== " ") {
       span.style.marginRight = "0.05em";
@@ -895,8 +944,6 @@ function applyFisheye(el, text) {
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
       span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
     }
-    span.style.transform =
-      `scale(${scale.toFixed(3)}) translateY(${lift.toFixed(1)}%) rotateY(${rotY.toFixed(1)}deg)`;
     frag.appendChild(span);
   }
   el.appendChild(frag);
