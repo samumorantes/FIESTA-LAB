@@ -30,7 +30,7 @@ import urllib.request
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONFIG = os.path.join(BASE, "config.json")
 TOKENS = os.path.join(BASE, "token.json")
-PORT = 8888
+PORT = 8899
 REDIRECT_URI = "http://127.0.0.1:%d/callback" % PORT
 SCOPE = "user-read-playback-state user-read-currently-playing user-read-email"
 UA = "FiestaVisualizer/1.0 (proyecto local, Windows)"
