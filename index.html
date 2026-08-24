@@ -722,13 +722,27 @@ $("dumpPresets").onclick = () => {
   const el = $("presetDump");
   const store = loadPresets();
   const keys = currentTrackKeys();
+  const fp = findPreset();
+  // resumen compacto: clave → diferencias respecto a los defaults
+  let summary = "";
+  const entries = Object.entries(store);
+  if (!entries.length) summary = "(no hay presets guardados)";
+  entries.forEach(([k, p], i) => {
+    summary += `\n[${i+1}] ${k}\n`;
+    const diffs = [];
+    PRESET_KEYS.forEach(pk => {
+      const def = CFG_DEFAULTS[pk], val = p[pk];
+      if (JSON.stringify(val) !== JSON.stringify(def))
+        diffs.push(`  ${pk}: ${JSON.stringify(def)} → ${JSON.stringify(val)}`);
+    });
+    summary += diffs.length ? diffs.join("\n") : "  (idéntico a los defaults)";
+  });
   el.style.display = "block";
   el.textContent =
-    "PRESETS GUARDADOS (" + Object.keys(store).length + "):\n" +
-    JSON.stringify(store, null, 1) + "\n\n" +
-    "CLAVES DE LA CANCIÓN ACTUAL:\n" + JSON.stringify(keys, null, 1) + "\n" +
-    "¿COINCIDE ALGUNO? → " + (findPreset() ? "SÍ: " + findPreset()[0] : "NINGUNO") + "\n" +
-    "Override global (globalLock): " + cfg.globalLock;
+    `PRESETS GUARDADOS: ${entries.length}\n${summary}\n\n` +
+    `CLAVES DE LA CANCIÓN ACTUAL:\n${JSON.stringify(keys, null, 1)}\n` +
+    `¿COINCIDE ALGUNO? → ${fp ? "SÍ: " + fp[0] : "NINGUNO"}\n` +
+    `Override global (globalLock): ${cfg.globalLock}`;
 };
 function updatePresetCount() {
   const n = Object.keys(loadPresets()).length;
