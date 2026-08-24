@@ -881,7 +881,12 @@ function applyEggFont() {
    DE LA PANTALLA (no de la frase). Funciona igual con 1 o 5 líneas porque
    la deformación depende solo de la posición en pantalla. */
 let _lensReady = false;
+let _lensBuiltFor = null;   // amplitud con la que se construyó el filtro actual
 function buildLens() {
+  const amp = Math.round(Math.min(innerWidth, innerHeight) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));   // amplitud en px (slider)
+  // si ya está construido para esta amplitud y tamaño, NO reconstruir (evita parpadeo)
+  if (_lensBuiltFor === amp + "x" + innerWidth + "x" + innerHeight && document.getElementById("lens")) return;
+  _lensBuiltFor = amp + "x" + innerWidth + "x" + innerHeight;
   const W = Math.max(64, Math.round(innerWidth / 4));   // mapa reducido (x4) = rápido
   const H = Math.max(64, Math.round(innerHeight / 4));
   const cv = document.createElement("canvas");
@@ -919,7 +924,8 @@ function buildLens() {
     svg.style.position = "absolute";
     document.body.appendChild(svg);
   }
-  const amp = Math.round(Math.min(innerWidth, innerHeight) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));   // amplitud en px (slider)
+  const amp2 = amp;   // (amp ya calculado arriba)
+
   svg.innerHTML =
     `<filter id="lens" x="0%" y="0%" width="100%" height="100%" ` +
     `color-interpolation-filters="sRGB">` +
@@ -933,8 +939,7 @@ function buildLens() {
 function applyLens() {
   const sc = $("screen");
   if (cfg.fish && !eggActive) {
-    // reconstruir SIEMPRE con la amplitud actual del slider antes de activar
-    _lensReady = false;
+    // construir SOLO si falta o cambió la amplitud (nunca en cada letra → sin parpadeo)
     buildLens();
     sc.classList.add("lens-on");
   } else {
