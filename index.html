@@ -918,24 +918,21 @@ function autoFitSize(text) {
   }
   base *= autoFitSize._dev;
 
-  // 2) nunca partir una palabra: reducir hasta que la PALABRA MÁS LARGA quepa entera
+  // 2) la frase SIEMPRE en UNA sola línea, centrada: reducir hasta que quepa entera
   const key = text + "|" + base.toFixed(2);
   if (_fitCache.key === key && _fitCache.fs != null) return _fitCache.fs;
-  const longest = text.split(/\s+/).reduce((a, w) => w.length > a.length ? w : a, "");
   let fs = base;
-  const MAX_ITER = 24, MIN_FS = 1.5;
+  const MAX_ITER = 30, MIN_FS = 1.2;
   el.style.visibility = "hidden";
   for (let i = 0; i < MAX_ITER && fs > MIN_FS; i++) {
     el.style.fontSize = fs + "vw";
-    // medir con texto plano: si la palabra más larga excede el ancho útil → reducir
-    el.textContent = longest;
-    const wordW = el.scrollWidth;
     el.textContent = text;
-    const totalH = el.scrollHeight;
-    const maxW = el.clientWidth || innerWidth * 0.88;
-    const maxH = innerHeight * 0.72;
-    if (wordW <= maxW * 1.02 && totalH <= maxH) break;   // cabe completa
-    fs *= 0.9;
+    const w = el.scrollWidth;
+    const h = el.scrollHeight;                 // 1 línea si h ≈ alto de una sola línea
+    const lineH = parseFloat(getComputedStyle(el).lineHeight) || fs * innerWidth * 0.0145;
+    const maxW = innerWidth * 0.9;
+    if (w <= maxW && h <= lineH * 1.6) break;  // cabe sin partirse
+    fs *= 0.88;
   }
   el.style.visibility = "";
   el.textContent = "";
