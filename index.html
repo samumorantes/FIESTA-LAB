@@ -867,11 +867,72 @@ function applyEggFont() {
   const r = document.documentElement.style;
   r.setProperty("--lyric-font", eggActive ? "Impact,'Arial Black',sans-serif" : (FONTS[cfg.font] || FONTS.arcade));
 }
-/* ---------- OJO DE PEZ: proyección de esfera sobre el texto ----------
-   Cada carácter se escala según su distancia al CENTRO del texto:
-   centro = 100% (frente a ti), extremos = ~78% (se alejan en la curva).
-   También se elevan/hunden un pelín siguiendo la curvatura vertical.
-   Es una deformación ESTÁTICA: solo se recalcula al cambiar la letra. */
+/* ---------- OJO DE PEZ REAL: lente por PÍXEL sobre toda la pantalla ----------
+   Un displacement map SVG deforma los pixeles del texto respecto al CENTRO
+   DE LA PANTALLA (no de la frase). Funciona igual con 1 o 5 líneas porque
+   la deformación depende solo de la posición en pantalla. */
+let _lensReady = false;
+function buildLens() {
+  const W = Math.max(64, Math.round(innerWidth / 4));   // mapa reducido (x4) = rápido
+  const H = Math.max(64, Math.round(innerHeight / 4));
+  const cv = document.createElement("canvas");
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  const img = g.createImageData(W, H);
+  const d = img.data;
+  // intensidad: cuánto se "hinca" el balón (0..1)
+  const k = 1.0;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // vector normalizado desde el CENTRO DE LA PANTALLA
+      const vx = (x - W / 2) / (W / 2);
+      const vy = (y - H / 2) / (H / 2);
+      let r = Math.sqrt(vx * vx + vy * vy);
+      const rn = Math.min(1, r);
+      // magnificación: crece hacia los bordes (samplea más afuera = centro más grande)
+      const m = k * rn * rn;
+      const i = (y * W + x) * 4;
+      // codificar dirección en canales R/G (0..255, 128 = sin desplazamiento)
+      d[i]     = Math.max(0, Math.min(255, Math.round(128 + vx * m * 127)));
+      d[i + 1] = Math.max(0, Math.min(255, Math.round(128 + vy * m * 127)));
+      d[i + 2] = 128;
+      d[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // construir el filtro SVG
+  const NS = "http://www.w3.org/2000/svg";
+  let svg = document.getElementById("lensSvg");
+  if (!svg) {
+    svg = document.createElementNS(NS, "svg");
+    svg.id = "lensSvg";
+    svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
+    svg.style.position = "absolute";
+    document.body.appendChild(svg);
+  }
+  const amp = Math.round(Math.min(innerWidth, innerHeight) * 0.18);   // amplitud en px
+  svg.innerHTML =
+    `<filter id="lens" x="0%" y="0%" width="100%" height="100%" ` +
+    `color-interpolation-filters="sRGB">` +
+    `<feImage href="${cv.toDataURL()}" x="0" y="0" width="${innerWidth}" height="${innerHeight}" ` +
+    `preserveAspectRatio="none" result="map"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="map" scale="${amp}" ` +
+    `xChannelSelector="R" yChannelSelector="G"/>` +
+    `</filter>`;
+  _lensReady = true;
+}
+function applyLens() {
+  const ly = $("lyrics");
+  if (cfg.fish && !eggActive) {
+    if (!_lensReady) buildLens();
+    ly.style.filter = "url(#lens)";
+  } else {
+    ly.style.filter = "";
+  }
+}
+addEventListener("resize", () => { _lensReady = false; applyLens(); }, { passive: true });
+
+/* ---------- OJO DE PEZ por letra (LEGACY, desactivado: ahora lente por píxel) ---------- */
 function applyFisheye(el, text) {
   // SIN fisheye: aplicar igualmente el espaciado manual entre palabras
   if (!cfg.fish || eggActive) {
@@ -955,8 +1016,28 @@ function setLyric(text, back) {
   $("lCur").style.whiteSpace = "pre-wrap";   // conservar espacios entre spans
   $("lCur").style.lineHeight = "";
   $("lCur").style.fontSize = cfg.fs + "vw";
-  if (!eggActive) { $("lCur").style.color = ""; }   // restaurar contraste dinámico
-  applyFisheye($("lCur"), text);
+  if (!eggActive) { $("lCur").style.color = "" }   // restaurar contraste dinámico
+  // con la LENTE activa el texto va PLANO: la deformación la hace el filtro por píxel
+  applyLens();
+  if (!cfg.fish || eggActive) {
+    applyFisheye($("lCur"), text);
+  } else {
+    const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
+    const el = $("lCur");
+    el.textContent = "";
+    text.split(/(\s+)/).forEach(part => {
+      if (/^\s+$/.test(part)) {
+        const sp = document.createElement("span");
+        sp.textContent = "\u00A0\u00A0";
+        sp.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
+        sp.style.marginRight = (0.1 * ws).toFixed(3) + "em";
+        sp.style.display = "inline-block";
+        el.appendChild(sp);
+      } else if (part) {
+        el.appendChild(document.createTextNode(part));
+      }
+    });
+  }
   // SUBTÍTULO: backs/paréntesis o TRADUCCIÓN como línea secundaria opaca
   const backEl = $("lBack");
   if (back) {
