@@ -881,10 +881,15 @@ function applyFisheye(el, text) {
       span.style.marginRight = "0.05em";
     }
     if (ch === " ") {
-      // espacio entre palabras: ancho fijo proporcional a la fuente
-      span.style.width = "0.5em";
-      span.style.marginLeft = "0";
-      span.style.marginRight = "0";
+      // espacio entre palabras: NBSP dentro de un span de ancho fijo
+      // (un espacio normal colapsa entre inline-blocks → palabras pegadas)
+      span.textContent = "\u00A0\u00A0";
+      span.style.width = "";
+      span.style.marginLeft = "0.1em";
+      span.style.marginRight = "0.1em";
+    } else if (i + 1 >= n || chars[i + 1] === " ") {
+      // último carácter de una palabra: garantiza hueco antes de la siguiente
+      span.style.marginRight = "0.18em";
     }
     span.style.transform =
       `scale(${scale.toFixed(3)}) translateY(${lift.toFixed(1)}%) rotateY(${rotY.toFixed(1)}deg)`;
