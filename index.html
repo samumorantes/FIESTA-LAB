@@ -1465,6 +1465,7 @@ function startFluid() {
 function stopFluid() {
   if (fluidRAF) cancelAnimationFrame(fluidRAF);
   fluidRAF = null;
+  fluidLoop._next = null;      // reset del cap de FPS para el próximo arranque
   $("fluidCanvas").classList.remove("on");
 }
 
@@ -1516,7 +1517,8 @@ function fluidLoop() {
   fluidLoop._next = Math.max(fluidLoop._next + 33, nowT - 100);
   fluidRAF = requestAnimationFrame(fluidLoop);
   const cv = $("fluidCanvas");
-  const ctx = cv.getContext("2d");
+  if (!fluidLoop._ctx) fluidLoop._ctx = cv.getContext("2d", { willReadFrequently: true });
+  const ctx = fluidLoop._ctx;
   const W = cv.width, H = cv.height;
   const nowS = pos || 0;
   const dt = 1/60;
@@ -1624,7 +1626,7 @@ function setFluidContrastZone() {
   if (!cv.width) return;
   try {
     const ctx = cv.getContext("2d");
-    const strip = ctx.getImageData(0, cv.height*0.35, cv.width, cv.height*0.3).data;
+    const strip = ctx.getImageData(0, cv.height*0.35, cv.width, Math.round(cv.height*0.3)).data;
     let sum = 0, n = 0;
     for (let i = 0; i < strip.length; i += 4*40) {
       sum += 0.2126*strip[i] + 0.7152*strip[i+1] + 0.0722*strip[i+2];
