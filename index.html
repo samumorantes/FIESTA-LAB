@@ -36,8 +36,7 @@
     width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)));
     height: calc(100svh * (1 - var(--hy0) - var(--hy1)));
     position:absolute; z-index:0; overflow:hidden;
-    transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
-    transform-origin:50% 45%;
+    transform:none;
     border-radius:3vmin}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
