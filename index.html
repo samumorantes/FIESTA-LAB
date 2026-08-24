@@ -430,6 +430,8 @@
     <div class="row"><button id="savePresetArtist" class="btn2">🎤 Guardar para este ARTISTA</button></div>
     <div class="row"><button id="savePresetAlbum" class="btn2">💿 Guardar para este ÁLBUM</button></div>
     <div class="row"><span id="presetCount" style="font-size:11px;opacity:.6"></span></div>
+    <div class="row"><button id="dumpPresets" class="btn2">🔍 Ver presets guardados</button></div>
+    <pre id="presetDump" style="font-size:10px;max-height:180px;overflow:auto;background:rgba(0,0,0,.4);border-radius:8px;padding:8px;display:none;white-space:pre-wrap"></pre>
     <div class="row"><button id="clearPresets" class="btn2">🗑 Borrar todos los presets</button></div>
 
     <h3>🌊 Fluido: paleta manual</h3>
@@ -716,6 +718,18 @@ function checkPresets() {
   };
 });
 $("clearPresets").onclick = () => { savePresets({}); showToast("🗑 PRESETS BORRADOS"); };
+$("dumpPresets").onclick = () => {
+  const el = $("presetDump");
+  const store = loadPresets();
+  const keys = currentTrackKeys();
+  el.style.display = "block";
+  el.textContent =
+    "PRESETS GUARDADOS (" + Object.keys(store).length + "):\n" +
+    JSON.stringify(store, null, 1) + "\n\n" +
+    "CLAVES DE LA CANCIÓN ACTUAL:\n" + JSON.stringify(keys, null, 1) + "\n" +
+    "¿COINCIDE ALGUNO? → " + (findPreset() ? "SÍ: " + findPreset()[0] : "NINGUNO") + "\n" +
+    "Override global (globalLock): " + cfg.globalLock;
+};
 function updatePresetCount() {
   const n = Object.keys(loadPresets()).length;
   const el = $("presetCount");
