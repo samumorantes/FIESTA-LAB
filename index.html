@@ -19,21 +19,29 @@
   @keyframes powerOn{0%{opacity:0}18%{opacity:.7}30%{opacity:.12}44%{opacity:.95}55%{opacity:.25}70%{opacity:1}100%{opacity:1}}
   @keyframes crtFlicker{0%,100%{opacity:1}93.5%{opacity:1}94%{opacity:.9}94.5%{opacity:1}96.5%{opacity:.95}97%{opacity:1}}
 
-  /* ====== MUEBLE DE TV VINTAGE: IMAGEN REAL (tv-frame.png) ENCIMA ======
+  /* ====== MUEBLE DE TV VINTAGE: IMAGEN REAL (tv-frame-clean.png) ENCIMA ======
      La imagen del marco va por ENCIMA de todo lo visual; su hueco transparente
-     deja ver la app. Coordenadas del hueco medidas sobre el PNG:
-     left 8.51% · top 9.56% · right 8.57% · bottom 9.66% */
+     deja ver la app. El PNG es 1493x983 (ratio 1.5188) y se escala con "contain":
+     la imagen siempre mide 100svh de alto, centrada. El hueco medido sobre el
+     PNG (127,94)-(1364,887) px → posición de #screen en función de 100svh. */
+  :root{ --tvratio: 1.51882;   /* w/h del PNG */
+         --hx0: .08506; --hy0: .09563; --hx1: .08573; --hy1: .09664; } /* hueco frac */
   #tvFrame{position:absolute;inset:0;z-index:20;pointer-events:none;
-    background:url("tv-frame-clean.png") no-repeat center / contain}
-  /* la pantalla se posiciona EXACTAMENTE en el hueco transparente del marco */
-  #screen{position:absolute;left:8.51%;top:9.56%;right:8.57%;bottom:9.66%;z-index:0;overflow:hidden;
+    background:url("tv-frame-clean.png") no-repeat center / auto 100%}
+  /* pantalla EXACTAMENTE en el hueco (válido para cualquier viewport 16:9 o más ancho) */
+  #screen{
+    left: calc(50vw - (100svh * var(--tvratio) / 2) + (100svh * var(--tvratio)) * var(--hx0));
+    top: calc(100svh * var(--hy0));
+    width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)));
+    height: calc(100svh * (1 - var(--hy0) - var(--hy1)));
+    position:absolute; z-index:0; overflow:hidden;
     transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
     transform-origin:50% 45%;
     border-radius:.6vmin}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
   /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
-  #lensTarget{position:absolute;inset:3.2vmin;pointer-events:none}
+  #lensTarget{position:absolute;inset:0;pointer-events:none}
   #screen.tilt-off{transform:none;animation:none}
   @keyframes screenDrift{
     0%{transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg) translate(0,0)}
@@ -109,6 +117,9 @@
     border:1px solid rgba(255,255,255,.15);opacity:0;pointer-events:none;
     transition:opacity .3s ease, transform .3s ease}
   #toast.on{opacity:1;transform:translateX(-50%) scale(1)}
+  /* sin mueble de TV: pantalla a pantalla completa, marco oculto */
+  body.no-tv #tvFrame{display:none}
+  body.no-tv #screen{left:0;top:0;width:100vw;height:100svh;border-radius:2.6vmin}
 
   /* ====== PANEL DE AJUSTES — LIQUID GLASS ====== */
   #panel{position:absolute;top:58px;right:12px;width:312px;max-height:82vh;overflow-y:auto;
@@ -393,6 +404,7 @@
     <div class="chk"><input id="tiltChk" type="checkbox" checked> Inclinación de pantalla</div>
     <div class="chk"><input id="refChk" type="checkbox" checked> Banda de refresco</div>
     <div class="chk"><input id="fishChk" type="checkbox" checked> Ojo de pez (letra cóncava)</div>
+    <div class="chk"><input id="tvChk" type="checkbox" checked> Mueble de TV vintage (imagen)</div>
     </div>
 
     <h3>Efectos</h3>
@@ -465,7 +477,7 @@ const CFG_DEFAULTS = {
   stroke: 2, shadow: 50,
   timing: "beats", mode: "rgb", pulseColor: true, pulseWhite: false, flashStrength: 40,
   scan: 70, mask: 60, vig: 70, noise: 50, flicker: true, tilt: true, refresh: true,
-  scanOn: true, fish: true, transition: "tv",
+  scanOn: true, fish: true, tv: true, transition: "tv",
   autoMood: true, moodOverride: "auto",
   // ---- nuevas funciones (todas opcionales) ----
   theme: "classic",        // tema completo aplicado
@@ -539,7 +551,7 @@ bindRange("shadowRng", "shadow", "shadowVal");
 bindRange("flashRng", "flashStrength", "flashVal", v => v + "%");
 bindChk("upperChk", "upper"); bindChk("pulseColorChk", "pulseColor"); bindChk("pulseWhiteChk", "pulseWhite");
 bindChk("flickChk", "flicker"); bindChk("tiltChk", "tilt"); bindChk("refChk", "refresh");
-bindChk("scanChk", "scanOn"); bindChk("fishChk", "fish");
+bindChk("scanChk", "scanOn"); bindChk("fishChk", "fish"); bindChk("tvChk", "tv");
 bindChk("moodChk", "autoMood");
 bindSel("moodSel", "moodOverride"); bindSel("transSel", "transition");
 bindSel("fontSel", "font"); bindSel("ctiming", "timing"); bindSel("cmode", "mode");
@@ -581,7 +593,7 @@ function syncAllControls() {
   });
   [["upperChk","upper"],["pulseColorChk","pulseColor"],["pulseWhiteChk","pulseWhite"],
    ["flickChk","flicker"],["tiltChk","tilt"],["refChk","refresh"],
-   ["scanChk","scanOn"],["fishChk","fish"],["moodChk","autoMood"]].forEach(([id, key]) => {
+   ["scanChk","scanOn"],["fishChk","fish"],["tvChk","tv"],["moodChk","autoMood"]].forEach(([id, key]) => {
     $(id).checked = !!cfg[key];
   });
   [["moodSel","moodOverride"],["transSel","transition"],
@@ -673,6 +685,8 @@ function applyCfg() {
   $("screen").classList.toggle("tilt-off", !cfg.tilt);
   $("refresh").classList.toggle("hidden-refresh", !cfg.refresh);
   $("crt").style.display = cfg.scanOn ? "" : "none";   // scanlines OFF = sin capa CRT
+  // mueble de TV vintage ON/OFF: la pantalla vuelve a ocupar todo el viewport
+  document.body.classList.toggle("no-tv", !cfg.tv);
   const ly = $("lyrics");
   document.body.classList.toggle("fisheye", !!cfg.fish);   // ojo de pez GLOBAL
   applyLens();   // mantener la lente coherente al cambiar config/tema
@@ -1844,7 +1858,10 @@ try {
   if (mq && ["auto","party","chill"].includes(mq)) cfg.moodOverride = mq;
   const tq = new URLSearchParams(location.search).get("transition");
   if (tq && ["tv","shutter","vinyl","none"].includes(tq)) cfg.transition = tq;
+  const tvq = new URLSearchParams(location.search).get("tv");
+  if (tvq === "0") cfg.tv = false;
 } catch (e) {}
+applyCfg();   // re-aplicar con overrides de URL (tv=0 etc.)
 if (location.search.includes("chan")) playChannel();   // test visual inmediato
 
 /* ---------- COLA: próxima canción (abajo-izquierda) ---------- */
