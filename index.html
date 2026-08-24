@@ -627,9 +627,9 @@ $("resetBtn").onclick = () => {
 /* ---------- 💾 PRESETS POR MÚSICA (canción / artista / álbum) ----------
    JERARQUÍA DE CONFIGURACIÓN:
    1. cfg.globalLock = ON  → override global: NINGÚN preset toca nada
-   2. globalLock = OFF (default) → al cambiar de canción se restaura la
-      config "habitual" (fv_cfg), y si la canción/artista/álbum tiene preset,
-      ese preset se aplica AL INSTANTE por encima. */
+   2. globalLock = OFF (default) → cada track se evalúa SIEMPRE en el tick
+      principal (no solo al cargar): si tiene preset, se aplica AL INSTANTE;
+      si no tiene y venimos de uno, vuelve la config habitual. */
 const PRESETS_KEY = "fv_presets";
 function loadPresets() {
   try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || "{}"); }
@@ -678,6 +678,7 @@ function checkPresets() {
   const found = findPreset();
   if (found) {
     const [k, p] = found;
+    // se aplica SIEMPRE que el track actual no lo haya recibido aún
     if (_presetAppliedFor !== S.track.id) {
       _presetAppliedFor = S.track.id;
       applyPreset(p, k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
@@ -686,16 +687,21 @@ function checkPresets() {
         _lastCoverKey = "preset";
         clearChillGradient();
         if (isChill()) startFluid();
+      } else if (!p.customPal) {
+        coverPalette = null; _lastCoverKey = "";
+        extractCoverPalette(S.track.cover);
+        clearChillGradient();
+        if (isChill()) startFluid();
       }
       _presetWasActive = true;
     }
     return;
   }
   // esta canción NO tiene preset:
-  if (_presetWasActive && _presetAppliedFor !== S.track.id) {
+  if (_presetWasActive) {
     // venimos de una canción CON preset → volver a la config habitual
     restoreBaseConfig();
-    applyCfg(); syncAllControls();
+    applyCfg(); syncAllControls(); initPalPickers();
     if (!cfg.customPal && S.track.cover) extractCoverPalette(S.track.cover);
     clearChillGradient();
     if (isChill()) startFluid();
@@ -1396,6 +1402,7 @@ let _tickBusy = false;async function tick() {
       playing = serverPlaying;
       speed = serverPlaying ? 1 : 0;
       posAt = performance.now();
+      checkPresets();   // evaluar SIEMPRE (barato: findPreset es un lookup)
     } else if (S && S.track && sameTrack && !samePlaying) {
       // misma canción pero cambió pausa → solo actualizar estado, no recargar
       playing = serverPlaying;
