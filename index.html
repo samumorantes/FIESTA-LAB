@@ -29,17 +29,16 @@
   #tvFrame{position:absolute;inset:0;z-index:20;pointer-events:none;
     background:url("tv-frame-clean.png") no-repeat center / auto 100%}
   /* pantalla EXACTAMENTE en el hueco (válido para cualquier viewport 16:9 o más ancho).
-     Se expande +1.2% por lado para meterse BAJO el bisel negro interno del PNG,
-     y border-radius grande para seguir la curva de las esquinas del tubo. */
+     border-radius generoso para seguir la curva de las esquinas del tubo. */
   #screen{
-    left: calc(50vw - (100svh * var(--tvratio) / 2) + (100svh * var(--tvratio)) * var(--hx0) - 1.2svh);
-    top: calc(100svh * var(--hy0) - 1.2svh);
-    width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)) + 2.4svh);
-    height: calc(100svh * (1 - var(--hy0) - var(--hy1)) + 2.4svh);
+    left: calc(50vw - (100svh * var(--tvratio) / 2) + (100svh * var(--tvratio)) * var(--hx0));
+    top: calc(100svh * var(--hy0));
+    width: calc(100svh * var(--tvratio) * (1 - var(--hx0) - var(--hx1)));
+    height: calc(100svh * (1 - var(--hy0) - var(--hy1)));
     position:absolute; z-index:0; overflow:hidden;
     transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg);
     transform-origin:50% 45%;
-    border-radius:4vmin}
+    border-radius:3vmin}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
   /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
