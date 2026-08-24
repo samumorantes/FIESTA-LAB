@@ -421,8 +421,10 @@
     <div class="row"><button id="testChan" class="btn2">Probar transición</button></div>
 
     <h3>💾 Presets por música</h3>
+    <div class="chk"><input id="globalLockChk" type="checkbox"> 🔒 Override global (los presets NO cambian nada)</div>
     <div class="row" style="font-size:11px;opacity:.7;line-height:1.4">
-      Guarda cómo se ve AHORA y se aplicará solo cuando suene esta canción, artista o álbum.</div>
+      Guarda cómo se ve AHORA y se aplicará solo cuando suene esta canción, artista o álbum.
+      Con el override global activo, los presets quedan desactivados.</div>
     <div class="row"><button id="savePresetSong" class="btn2">🎵 Guardar para ESTA canción</button></div>
     <div class="row"><button id="savePresetArtist" class="btn2">🎤 Guardar para este ARTISTA</button></div>
     <div class="row"><button id="savePresetAlbum" class="btn2">💿 Guardar para este ÁLBUM</button></div>
@@ -506,13 +508,11 @@ const CFG_DEFAULTS = {
   dropFx: true,            // explosión de partículas en el drop
   customPal: false,        // usar paleta manual en el fluido
   customPalCols: ["#5a2a91", "#8f3f7d", "#2a6b91", "#c46a3f", "#3f915a"],
+  globalLock: false,       // 🔒 override global: los presets no cambian nada
 };
-/* claves que se guardan en un preset de música */
-const PRESET_KEYS = ["fs","font","phrase","upper","stroke","shadow","timing","mode",
-  "pulseColor","pulseWhite","flashStrength","scan","mask","vig","noise",
-  "flicker","tilt","refresh","scanOn","fish","tv","transition","theme",
-  "trails","spectrum","beatBounce","dropFx","smartContrast",
-  "customPal","customPalCols","wordSpacing","lensStrength"];
+/* claves que se guardan en un preset de música: TODO, de inicio a fin */
+const PRESET_KEYS = Object.keys(CFG_DEFAULTS).filter(k =>
+  !["moodOverride","_specialTrack"].includes(k));   // el modo se decide por canción; estado interno no
 const cfg = Object.assign({}, CFG_DEFAULTS);
 try { Object.assign(cfg, JSON.parse(localStorage.getItem("fv_cfg") || "{}")); } catch (e) {}
 // La paleta debe reaccionar al beat real, no a barras antiguas guardadas.
@@ -607,7 +607,12 @@ $("resetBtn").onclick = () => {
   setTimeout(() => { $("testChan").textContent = "Probar transición"; }, 1500);
 };
 
-/* ---------- 💾 PRESETS POR MÚSICA (canción / artista / álbum) ---------- */
+/* ---------- 💾 PRESETS POR MÚSICA (canción / artista / álbum) ----------
+   JERARQUÍA DE CONFIGURACIÓN:
+   1. cfg.globalLock = ON  → override global: NINGÚN preset toca nada
+   2. globalLock = OFF (default) → al cambiar de canción se restaura la
+      config "habitual" (fv_cfg), y si la canción/artista/álbum tiene preset,
+      ese preset se aplica AL INSTANTE por encima. */
 const PRESETS_KEY = "fv_presets";
 function loadPresets() {
   try { return JSON.parse(localStorage.getItem(PRESETS_KEY) || "{}"); }
@@ -630,28 +635,57 @@ function applyPreset(p, label) {
   save(); applyCfg(); syncAllControls();
   showToast("💾 PRESET: " + label);
 }
+/* Restaurar la config habitual del usuario (sin presets): recarga fv_cfg */
+function restoreBaseConfig() {
+  try {
+    const base = JSON.parse(localStorage.getItem("fv_cfg") || "{}");
+    Object.assign(cfg, CFG_DEFAULTS, base);
+    // limpiar estado derivado de presets
+    if (!cfg.customPal) { coverPalette = null; _lastCoverKey = ""; }
+  } catch (e) { Object.assign(cfg, CFG_DEFAULTS); }
+}
 let _presetAppliedFor = null;   // track_id del último preset aplicado
-function checkPresets() {
-  if (!S || !S.track) return;
+let _presetWasActive = false;   // ¿la canción anterior tenía preset?
+function findPreset() {
   const keys = currentTrackKeys();
   const store = loadPresets();
-  // prioridad: canción > artista > álbum
   for (const k of [keys.song, keys.artist, keys.album]) {
-    if (k && store[k]) {
-      if (_presetAppliedFor !== S.track.id) {
-        _presetAppliedFor = S.track.id;
-        applyPreset(store[k], k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
-        if (store[k].customPal && store[k].customPalCols) {
-          coverPalette = store[k].customPalCols.map(hex2rgbArr);
-          _lastCoverKey = "preset";
-          clearChillGradient();
-          if (isChill()) startFluid();
-        }
-      }
-      return;
-    }
+    if (k && store[k]) return [k, store[k]];
   }
-  _presetAppliedFor = null;   // esta canción no tiene preset
+  return null;
+}
+function checkPresets() {
+  if (!S || !S.track) return;
+  // OVERRIDE GLOBAL: si está activo, los presets no hacen NADA
+  if (cfg.globalLock) { _presetAppliedFor = null; _presetWasActive = false; return; }
+  const found = findPreset();
+  if (found) {
+    const [k, p] = found;
+    if (_presetAppliedFor !== S.track.id) {
+      _presetAppliedFor = S.track.id;
+      applyPreset(p, k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
+      if (p.customPal && p.customPalCols) {
+        coverPalette = p.customPalCols.map(hex2rgbArr);
+        _lastCoverKey = "preset";
+        clearChillGradient();
+        if (isChill()) startFluid();
+      }
+      _presetWasActive = true;
+    }
+    return;
+  }
+  // esta canción NO tiene preset:
+  if (_presetWasActive && _presetAppliedFor !== S.track.id) {
+    // venimos de una canción CON preset → volver a la config habitual
+    restoreBaseConfig();
+    applyCfg(); syncAllControls();
+    if (!cfg.customPal && S.track.cover) extractCoverPalette(S.track.cover);
+    clearChillGradient();
+    if (isChill()) startFluid();
+    showToast("⚙ CONFIG HABITUAL");
+  }
+  _presetAppliedFor = null;
+  _presetWasActive = false;
 }
 ["savePresetSong","savePresetArtist","savePresetAlbum"].forEach((id, i) => {
   $(id).onclick = () => {
@@ -694,6 +728,7 @@ function initPalPickers() {
   });
 }
 bindChk("customPalChk", "customPal");
+bindChk("globalLockChk", "globalLock");
 $("customPalChk").addEventListener("change", () => {
   if (cfg.customPal) {
     coverPalette = cfg.customPalCols.map(hex2rgbArr);
@@ -731,7 +766,8 @@ function syncAllControls() {
   });
   [["upperChk","upper"],["pulseColorChk","pulseColor"],["pulseWhiteChk","pulseWhite"],
    ["flickChk","flicker"],["tiltChk","tilt"],["refChk","refresh"],
-   ["scanChk","scanOn"],["fishChk","fish"],["tvChk","tv"],["moodChk","autoMood"]].forEach(([id, key]) => {
+   ["scanChk","scanOn"],["fishChk","fish"],["tvChk","tv"],["moodChk","autoMood"],
+   ["globalLockChk","globalLock"],["customPalChk","customPal"]].forEach(([id, key]) => {
     $(id).checked = !!cfg[key];
   });
   [["moodSel","moodOverride"],["transSel","transition"],
@@ -1331,6 +1367,7 @@ let _tickBusy = false;async function tick() {
       while(barPtr  < BR.length && BR[barPtr]  <= pos) barPtr++;
       while(secPtr  < SE.length && SE[secPtr]  <= pos) secPtr++;
       renderState();
+      checkPresets();   // presets por canción/artista/álbum en CADA carga de track
       onColor();
     }
   } catch (e) {
