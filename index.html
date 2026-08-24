@@ -1123,8 +1123,8 @@ function applyEggFont() {
 let _lensReady = false;
 let _lensBuiltFor = null;
 function buildLens() {
-  // La lente debe deformar SOLO el área de pantalla dentro del televisor,
-  // no el viewport completo (por eso la esquina quedaba negra).
+  // La lente debe deformar SOLO el área de pantalla. lensTarget es relative a
+  // #screen, así que el feImage va en coordenadas LOCALES (0,0 = esquina del cristal).
   const sc = document.getElementById("screen").getBoundingClientRect();
   const amp = Math.round(Math.min(sc.width, sc.height) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));
   const key = Math.round(sc.width) + "x" + Math.round(sc.height);
@@ -1140,19 +1140,19 @@ function buildLens() {
     document.body.appendChild(svg);
   }
   svg.innerHTML =
-    `<filter id="lens" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">` +
-    `<feImage id="lensMap" x="${sc.left}" y="${sc.top}" width="${sc.width}" height="${sc.height}" preserveAspectRatio="none" result="map"/>` +
+    `<filter id="lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB" primitiveUnits="objectBoundingBox">` +
+    `<feImage id="lensMap" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="map"/>` +
     `<feDisplacementMap in="SourceGraphic" in2="map" scale="${amp}" ` +
     `xChannelSelector="R" yChannelSelector="G"/>` +
     `</filter>`;
-  // generar mapa barril centrado EN EL CRISTAL (no en el viewport)
+  // mapa barril en coordenadas locales del cristal (W×H del propio screen)
   const W = Math.max(64, Math.round(sc.width / 4)), H = Math.max(64, Math.round(sc.height / 4));
   const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
   const g = cv.getContext("2d"); const img = g.createImageData(W, H); const d = img.data;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     const vx = (x - W / 2) / (W / 2), vy = (y - H / 2) / (H / 2);
     const rn = Math.min(1, Math.sqrt(vx * vx + vy * vy));
-    const m = rn * rn;                       // magnificación creciente hacia bordes
+    const m = rn * rn;
     const i = (y * W + x) * 4;
     d[i]     = Math.max(0, Math.min(255, Math.round(128 + vx * m * 127)));
     d[i + 1] = Math.max(0, Math.min(255, Math.round(128 + vy * m * 127)));
