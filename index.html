@@ -536,15 +536,23 @@ function bindRangeReload(id, key, valId, fmt) {
     cfg[key] = +e.target.value;
     $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
     save();
-    // recarga con debounce: evita machacar la API mientras arrastras
+    // re-repartir las frases YA con el nuevo tamaño (sin esperar al server):
+    // invalidar punteros para que el próximo tick recargue el estado completo
     clearTimeout(_t);
     _t = setTimeout(async () => {
       try {
         const r = await fetch("/api/state?mw=" + cfg.phrase + "&force=1", { cache: "no-store" });
         const ns = await r.json();
-        S = ns; lineIdx = -1; lastShown = null;   // fuerza re-render completo
+        if (ns && ns.track) {
+          S = ns;
+          lineIdx = -1; lastShown = null; setLyric._last = 0;   // fuerza re-render completo
+          // repintar la línea actual al instante con el nuevo reparto
+          const L0 = S.lyrics || [];
+          while (lineIdx + 1 < L0.length && L0[lineIdx + 1].t <= pos) lineIdx++;
+          if (lineIdx >= 0 && lineIdx < L0.length) { lastShown = L0[lineIdx].text; setLyric(lastShown, L0[lineIdx].back); }
+        }
       } catch (err) {}
-    }, 400);
+    }, 350);
   };
   if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
 }
