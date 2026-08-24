@@ -682,15 +682,19 @@ function checkPresets() {
     if (_presetAppliedFor !== S.track.id) {
       _presetAppliedFor = S.track.id;
       applyPreset(p, k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
+      // MODO FIESTA/FLUIDO también viene del preset:
+      if (p.moodOverride && p.moodOverride !== "auto") mood = p.moodOverride;
+      else if (S.mood) mood = S.mood;
       if (p.customPal && p.customPalCols) {
         coverPalette = p.customPalCols.map(hex2rgbArr);
         _lastCoverKey = "preset";
         clearChillGradient();
-        if (isChill()) startFluid();
-      } else if (!p.customPal) {
+        stopFluid(); startFluid();
+      } else {
         coverPalette = null; _lastCoverKey = "";
         extractCoverPalette(S.track.cover);
         clearChillGradient();
+        stopFluid();
         if (isChill()) startFluid();
       }
       _presetWasActive = true;
@@ -702,8 +706,12 @@ function checkPresets() {
     // venimos de una canción CON preset → volver a la config habitual
     restoreBaseConfig();
     applyCfg(); syncAllControls(); initPalPickers();
-    if (!cfg.customPal && S.track.cover) extractCoverPalette(S.track.cover);
+    const serverMood = S.mood || "party";
+    mood = cfg.moodOverride !== "auto" ? cfg.moodOverride : serverMood;
+    coverPalette = null; _lastCoverKey = S.track.cover || "";
+    extractCoverPalette(S.track.cover);
     clearChillGradient();
+    stopFluid();
     if (isChill()) startFluid();
     showToast("⚙ CONFIG HABITUAL");
   }
