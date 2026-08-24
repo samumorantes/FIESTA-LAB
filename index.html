@@ -662,6 +662,7 @@ function applyCfg() {
   $("crt").style.display = cfg.scanOn ? "" : "none";   // scanlines OFF = sin capa CRT
   const ly = $("lyrics");
   document.body.classList.toggle("fisheye", !!cfg.fish);   // ojo de pez GLOBAL
+  applyLens();   // mantener la lente coherente al cambiar config/tema
   document.body.classList.toggle("beat-bounce", !!cfg.beatBounce);  // rebote al beat
   ly.classList.toggle("upper", cfg.upper);
   // espectro CRT: crear barras una vez, mostrar/ocultar según modo y config
@@ -925,7 +926,9 @@ function buildLens() {
     svg = document.createElementNS(NS, "svg");
     svg.id = "lensSvg";
     svg.setAttribute("width", "0"); svg.setAttribute("height", "0");
-    svg.style.position = "absolute";
+    svg.style.position = "fixed";
+    svg.style.left = "-9999px"; svg.style.top = "-9999px";
+    svg.style.width = "10px"; svg.style.height = "10px";
     document.body.appendChild(svg);
   }
   const amp2 = amp;   // (amp ya calculado arriba)
