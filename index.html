@@ -314,6 +314,8 @@
       </select></div>
     <div class="row"><label>Palabras por frase: <span class="val" id="phraseVal">4</span></label>
       <input id="phraseRng" type="range" min="2" max="8" step="1" value="4"></div>
+    <div class="row"><label>Espacio entre palabras: <span class="val" id="wordSpVal">1.0×</span></label>
+      <input id="wordSpRng" type="range" min="0" max="3" step="0.1" value="1"></div>
     <div class="chk"><input id="upperChk" type="checkbox"> MAYÚSCULAS</div>
     <div class="row"><label>Grosor del borde: <span class="val" id="strokeVal">2</span></label>
       <input id="strokeRng" type="range" min="0" max="6" step="1" value="2"></div>
@@ -447,7 +449,7 @@ const THEMES = {
           flicker: false, tilt: false, refresh: false, fish: false },
 };
 const CFG_DEFAULTS = {
-  fs: 7, font: "arcade", phrase: 4, upper: false,
+  fs: 7, font: "arcade", phrase: 4, wordSpacing: 1.0, upper: false,
   stroke: 2, shadow: 50,
   timing: "beats", mode: "rgb", pulseColor: true, pulseWhite: false, flashStrength: 40,
   scan: 70, mask: 60, vig: 70, noise: 50, flicker: true, tilt: true, refresh: true,
@@ -488,6 +490,7 @@ function bindSel(id, key) {
 }
 bindRange("fsRange", "fs", "fsVal");
 bindRange("phraseRng", "phrase", "phraseVal", v => v + " palabras");
+bindRange("wordSpRng", "wordSpacing", "wordSpVal", v => v.toFixed(1) + "×");
 bindRange("scanRng", "scan", "scanVal");
 bindRange("maskRng", "mask", "maskVal");
 bindRange("vigRng", "vig", "vigVal");
@@ -530,7 +533,7 @@ $("resetBtn").onclick = () => {
 };
 /* Sincronizar TODOS los controles del panel con cfg (usado por reset y todo/nada) */
 function syncAllControls() {
-  [["fsRange","fs","fsVal"],["phraseRng","phrase","phraseVal"],
+  [["fsRange","fs","fsVal"],["phraseRng","phrase","phraseVal"],["wordSpRng","wordSpacing","wordSpVal"],
    ["scanRng","scan","scanVal"],["maskRng","mask","maskVal"],
    ["vigRng","vig","vigVal"],["noiseRng","noise","noiseVal"],
    ["strokeRng","stroke","strokeVal"],["shadowRng","shadow","shadowVal"],
@@ -881,15 +884,16 @@ function applyFisheye(el, text) {
       span.style.marginRight = "0.05em";
     }
     if (ch === " ") {
-      // espacio entre palabras: NBSP dentro de un span de ancho fijo
-      // (un espacio normal colapsa entre inline-blocks → palabras pegadas)
+      // espacio entre palabras: ancho controlado por cfg.wordSpacing (slider manual)
+      const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
       span.textContent = "\u00A0\u00A0";
       span.style.width = "";
-      span.style.marginLeft = "0.1em";
-      span.style.marginRight = "0.1em";
+      span.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
+      span.style.marginRight = (0.1 * ws).toFixed(3) + "em";
     } else if (i + 1 >= n || chars[i + 1] === " ") {
-      // último carácter de una palabra: garantiza hueco antes de la siguiente
-      span.style.marginRight = "0.18em";
+      // último carácter de una palabra: hueco antes de la siguiente (también escalable)
+      const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
+      span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
     }
     span.style.transform =
       `scale(${scale.toFixed(3)}) translateY(${lift.toFixed(1)}%) rotateY(${rotY.toFixed(1)}deg)`;
@@ -898,53 +902,12 @@ function applyFisheye(el, text) {
   el.appendChild(frag);
 }
 
-/* ---------- AUTO-FIT: tamaño según pantalla + palabras NUNCA cortadas ---------- */
-let _fitCache = { key: "", fs: null };
-function autoFitSize(text) {
-  const el = $("lCur");
-  if (!el) return cfg.fs;
-  // 1) tamaño base adaptado al dispositivo (detector de pantalla)
-  let base = cfg.fs;
-  if (!autoFitSize._dev) {
-    const w = innerWidth, h = innerHeight;
-    const min = Math.min(w, h), ar = w / h;
-    // móvil vertical / horizontal pequeño → fuente proporcionalmente mayor pero limitada
-    autoFitSize._dev =
-      (min < 500 && ar < 1) ? 1.35 :   // móvil en vertical
-      (min < 700)           ? 1.15 :   // móvil horizontal / tablet pequeño
-      (w > 2200)            ? 0.85 :   // pantalla muy grande
-                               1.0;    // desktop normal
-    addEventListener("resize", () => { autoFitSize._dev = null; _fitCache.key = ""; }, { passive: true });
-  }
-  base *= autoFitSize._dev;
-
-  // 2) la frase SIEMPRE en UNA sola línea, centrada: reducir hasta que quepa entera
-  const key = text + "|" + base.toFixed(2);
-  if (_fitCache.key === key && _fitCache.fs != null) return _fitCache.fs;
-  let fs = base;
-  const MAX_ITER = 30, MIN_FS = 1.2;
-  el.style.visibility = "hidden";
-  for (let i = 0; i < MAX_ITER && fs > MIN_FS; i++) {
-    el.style.fontSize = fs + "vw";
-    el.textContent = text;
-    const w = el.scrollWidth;
-    const h = el.scrollHeight;                 // 1 línea si h ≈ alto de una sola línea
-    const lineH = parseFloat(getComputedStyle(el).lineHeight) || fs * innerWidth * 0.0145;
-    const maxW = innerWidth * 0.9;
-    if (w <= maxW && h <= lineH * 1.6) break;  // cabe sin partirse
-    fs *= 0.88;
-  }
-  el.style.visibility = "";
-  el.textContent = "";
-  _fitCache = { key, fs };
-  return fs;
-}
+/* ---------- control manual: distancia entre palabras ---------- */
 
 function setLyric(text, back) {
   $("lCur").style.whiteSpace = "pre-wrap";   // conservar espacios entre spans
   $("lCur").style.lineHeight = "";
-  // AUTO-FIT: tamaño adaptado a la pantalla + garantizar palabras completas
-  $("lCur").style.fontSize = autoFitSize(text) + "vw";
+  $("lCur").style.fontSize = cfg.fs + "vw";
   if (!eggActive) { $("lCur").style.color = ""; }   // restaurar contraste dinámico
   applyFisheye($("lCur"), text);
   // SUBTÍTULO: backs/paréntesis o TRADUCCIÓN como línea secundaria opaca
