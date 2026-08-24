@@ -26,6 +26,8 @@
     will-change:filter}
   /* con lente activa NO animar transform (cada frame repinta el filtro = lag + parpadeo) */
   body.lens-live #screen{animation:none}
+  /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
+  #lensTarget{position:absolute;inset:0;pointer-events:none}
   #screen.tilt-off{transform:none;animation:none}
   @keyframes screenDrift{
     0%{transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg) translate(0,0)}
@@ -90,10 +92,10 @@
   #artist{font-size:13px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.5)}
   #badge{position:absolute;top:16px;right:62px;font-size:11px;font-weight:700;letter-spacing:1.5px;padding:5px 10px;border-radius:2px;background:rgba(0,0,0,.45);color:#ffd54a;z-index:5;display:none;font-family:'SpaceGrotesk',sans-serif}
 
-  #gear{position:fixed;top:10px;right:12px;width:40px;height:40px;border-radius:2px;border:none;background:rgba(0,0,0,.38);color:#fff;font-size:19px;cursor:pointer;z-index:10}
+  #gear{position:absolute;top:10px;right:12px;width:40px;height:40px;border-radius:2px;border:none;background:rgba(0,0,0,.38);color:#fff;font-size:19px;cursor:pointer;z-index:10}
 
   /* ====== SELECTOR RÁPIDO FIESTA/FLUIDO (bajo el engrane) ====== */
-  #moodSwitch{position:fixed;top:60px;right:14px;z-index:10;display:flex;align-items:center;
+  #moodSwitch{position:absolute;top:60px;right:14px;z-index:10;display:flex;align-items:center;
     padding:4px;border-radius:16px;background:rgba(0,0,0,.30);
     -webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);
     border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 18px rgba(0,0,0,.3)}
@@ -272,6 +274,7 @@
 </head>
 <body>
 <div id="screen">
+ <div id="lensTarget">
   <div id="bg"></div>
   <canvas id="fluidCanvas"></canvas>
   <div id="flash"></div>
@@ -279,7 +282,13 @@
   <div id="noise"></div>
   <div id="refresh"></div>
   <div id="pbar"></div>
-</div><!-- /screen (lo filtrado por la lente termina aquí; la UI vive fuera) -->
+  <div id="lyrics">
+    <div class="line main" id="lCur"></div>
+    <div class="line back" id="lBack" style="display:none"></div>
+  </div>
+  <div id="lineNone">NO LYRICS</div>
+  <div id="msg"></div>
+ </div><!-- /lensTarget -->
 
   <div id="top">
     <img id="cover" alt="">
@@ -400,11 +409,8 @@
     <div class="row"><button id="logoutBtn" class="btn2">Desconectar</button></div>
   </div>
 
-  <div id="lyrics">
-    <div class="line main" id="lCur"></div>
-    <div class="line back" id="lBack" style="display:none"></div>
-  </div>
-  <div id="lineNone">NO LYRICS</div>
+
+
   <div id="msg"></div>
   <div id="source">LETRAS: LRCLIB + SPOTIFY + LYRICS.OVH · RITMO: AUDIO ANALYSIS</div>
   <div id="queueTicker"><span id="queueLabel">A CONTINUACIÓN</span><span id="queueText"></span></div>
@@ -415,6 +421,7 @@
   <div id="spectrum"></div>
   <div id="qrOverlay"><div id="qrBox"></div><div id="qrHint">Escanea para votar la siguiente canción 🎵</div></div>
   <div id="transOverlay"></div>
+</div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -931,13 +938,13 @@ function buildLens() {
   _lensReady = true;
 }
 function applyLens() {
-  const sc = $("screen");
+  const t = document.getElementById("lensTarget");
   if (cfg.fish && !eggActive && +((cfg.lensStrength == null ? 18 : cfg.lensStrength)) > 0) {
     buildLens();
-    sc.style.filter = "url(#lens)";
+    t.style.filter = "url(#lens)";
     document.body.classList.add("lens-live");   // congela screenDrift mientras la lente está puesta
   } else {
-    sc.style.filter = "";
+    t.style.filter = "";
     document.body.classList.remove("lens-live");
   }
 }
