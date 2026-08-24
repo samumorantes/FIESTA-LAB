@@ -1380,6 +1380,10 @@ let _tickBusy = false;async function tick() {
     }
     const serverPlaying = !!sync.is_playing;
     const sameTrack = S && S.track && S.track.id && sync.track_id && S.track.id === sync.track_id;
+    // BUG presets: si el track cambió, avisar ya (checkPresets se llama tras recargar)
+    if (S && S.track && sync.track_id && S.track.id !== sync.track_id) {
+      _presetAppliedFor = null;   // fuerza re-evaluación del preset para el nuevo track
+    }
     const samePlaying = serverPlaying === playing;
     // letra activa devuelta por el server (autoridad: posición real de Spotify)
     if (sync.lyric && S && S.lyrics) { S.lyric = sync.lyric; }
