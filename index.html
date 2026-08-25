@@ -676,15 +676,20 @@ function checkPresets() {
   // OVERRIDE GLOBAL: si está activo, los presets no hacen NADA
   if (cfg.globalLock) { _presetAppliedFor = null; _presetWasActive = false; return; }
   const found = findPreset();
+  // OVERRIDE MANUAL DEL MODO: "Fiesta siempre" / "Fluido siempre" en el panel
+  // (o tecla F) manda sobre el preset. En "Auto" los presets deciden el modo.
+  const moodManual = cfg.moodOverride === "party" || cfg.moodOverride === "chill";
   if (found) {
     const [k, p] = found;
     // se aplica SIEMPRE que el track actual no lo haya recibido aún
     if (_presetAppliedFor !== S.track.id) {
       _presetAppliedFor = S.track.id;
       applyPreset(p, k.split(":")[0] === "song" ? S.track.name : k.split(":").slice(1).join(":"));
-      // MODO FIESTA/FLUIDO también viene del preset:
-      if (p.moodOverride && p.moodOverride !== "auto") mood = p.moodOverride;
-      else if (S.mood) mood = S.mood;
+      // MODO FIESTA/FLUIDO: solo lo cambia el preset si NO hay override manual
+      if (!moodManual) {
+        if (p.moodOverride && p.moodOverride !== "auto") mood = p.moodOverride;
+        else mood = S.mood || "party";
+      }
       if (p.customPal && p.customPalCols) {
         coverPalette = p.customPalCols.map(hex2rgbArr);
         _lastCoverKey = "preset";
@@ -698,6 +703,10 @@ function checkPresets() {
         if (isChill()) startFluid();
       }
       _presetWasActive = true;
+    } else if (moodManual) {
+      // override manual aplicado DESPUÉS del preset: respetarlo al vuelo
+      const wantChill = isChill();
+      if (wantChill && !fluidRAF) { clearChillGradient(); startFluid(); }
     }
     return;
   }
@@ -841,7 +850,10 @@ $("loginBtn").onclick = () => { location.href = S && S.logged_in ? "/logout" : "
 $("logoutBtn").onclick = () => { location.href = "/logout"; };
 $("bigLogin").onclick = () => { location.href = "/login"; };
 
-/* ---------- modo fiesta/fluido: tecla F (selector visual eliminado) ---------- */
+/* ---------- modo fiesta/fluido: tecla F (selector visual eliminado) ----------
+   La tecla F y el selector "Modo visual" son OVERRIDE MANUAL: lo que eliges
+   manda sobre los presets (igual que globalLock pero solo para el modo). */
+let _moodManualUntil = 0;   // timestamp: mientras sea futuro, presets no tocan el modo
 function toggleMood() {
   // alterna entre party y chill; si estaba en auto, fuerza el contrario del actual
   cfg.moodOverride = mood === "chill" ? "party" : "chill";
@@ -937,12 +949,19 @@ function applyCfg() {
   applyTrackRules();
   if (S && S.track) {
     checkPresets();   // presets guardados por canción/artista/álbum (prioridad máxima)
-    if (_presetAppliedFor !== S.track.id) {
+    // OVERRIDE MANUAL del modo: "Fiesta siempre"/"Fluido siempre" manda sobre
+    // presets y reglas. Aplicarlo al vuelo (arranca/para el fluido según toque).
+    const moodManual = cfg.moodOverride === "party" || cfg.moodOverride === "chill";
+    if (_presetAppliedFor !== S.track.id || moodManual) {
       const serverMood = S.mood || "party";
-      mood = cfg.moodOverride !== "auto" ? cfg.moodOverride : serverMood;
-      if (mood === "chill" && !coverPalette) extractCoverPalette(S.track.cover);
-      clearChillGradient();
-      if (isChill()) startFluid();
+      mood = moodManual ? cfg.moodOverride : serverMood;
+      if (mood === "chill") {
+        if (!coverPalette) extractCoverPalette(S.track.cover);
+        clearChillGradient();
+        startFluid();
+      } else {
+        stopFluid();
+      }
     }
   }
 }
