@@ -179,7 +179,7 @@
     transform:scale(.94);filter:blur(.4px);opacity:.36}
   /* ====== LETRA ====== */
   #lyrics{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:11vh 6vw;color:var(--tc);transition:color .15s;z-index:2;pointer-events:none}
-  #lyrics .line{text-align:center;margin:0 auto;display:block;max-width:100%}
+  #lyrics .line{text-align:center;margin:0 auto;display:inline-block;max-width:100%;white-space:nowrap}
   #lyrics.no-glow .line{text-shadow:none}
   #lyrics.upper .line{text-transform:uppercase}
   @keyframes song-flash {
@@ -1257,11 +1257,6 @@ function applyLens() {
   }
 }
 
-/* ---------- OJO DE PEZ por letra (LEGACY, desactivado: ahora lente por píxel) ----------
-   高昂: garantizar centrado visual aunque cada glifo tenga transforms 3D pesados.
-   Truco: envolver cada char en un span "anchor" con position:relative y left:50%,
-   y poner el transform 3D dentro de un span hijo (translateX -50%) → el glifo
-   se centra siempre respecto a su posición en el flujo, sin importar la deformación. */
 function applyFisheye(el, text) {
   // SIN fisheye: texto plano con espaciado entre palabras (GPU-only, sin spans por carácter)
   if (!cfg.fish || eggActive) {
@@ -1281,13 +1276,11 @@ function applyFisheye(el, text) {
     });
     return;
   }
-  // fisheye activo: cada carácter va dentro de un anchor centrado (left:50% + transform:translateX(-50%)).
-  // Garantiza que la deformación 3D no empuje el texto visualmente fuera del centro.
+  // fisheye activo: cada carácter es un inline-block con su transform 3D.
   el.textContent = "";
   const frag = document.createDocumentFragment();
   const chars = [...text];
   const n = chars.length;
-  // medir el ancho total con un mirror offscreen (no fuerza layout del contenedor real)
   const mirror = document.createElement("div");
   mirror.style.cssText = `position:fixed;top:-9999px;left:-9999px;visibility:hidden;
     font-size:${cfg.fs}vw;font-family:${FONTS[cfg.font]||FONTS.arcade};white-space:nowrap`;
@@ -1304,13 +1297,13 @@ function applyFisheye(el, text) {
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
       const sp = document.createElement("span");
       sp.textContent = "\u00A0\u00A0";
-      sp.style.cssText = `display:inline-block;margin-left:${(0.1*ws).toFixed(3)}em;margin-right:${(0.1*ws).toFixed(3)}em`;
+      sp.style.cssText = `display:inline-block;margin-left:${(0.1*ws).toFixed(3)}em;margin-right:${(0.1*ws).toFixed(3)}em;width:${(0.6*ws).toFixed(3)}em`;
       frag.appendChild(sp);
       acc += widths[i];
       continue;
     }
-    const inner = document.createElement("span");
-    inner.textContent = ch;
+    const span = document.createElement("span");
+    span.textContent = ch;
     const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
     acc += widths[i];
     const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
@@ -1320,26 +1313,20 @@ function applyFisheye(el, text) {
     const lift = -t * t * 8;
     const rotY = t * -10;
     const skew = t * 4;
-    // anchor: positioned relative, left 50% → centro del carácter, luego del-
-    //        transform translateX -50% → el char se centra respecto al anchor
-    const anchor = document.createElement("span");
-    anchor.style.cssText = `display:inline-block;position:relative;height:1em;vertical-align:baseline`;
-    inner.style.cssText = `display:inline-block;position:absolute;left:50%;top:0;
-      transform-origin:center center;will-change:transform;
-      transform:translateX(-50%) perspective(300px) rotateY(${rotY.toFixed(1)}deg)
-      skewX(${skew.toFixed(1)}deg) scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)})
-      translateY(${lift.toFixed(1)}%)`;
-    anchor.appendChild(inner);
+    span.style.cssText = `display:inline-block;text-align:center;will-change:transform;
+      transform:perspective(300px) rotateY(${rotY.toFixed(1)}deg) skewX(${skew.toFixed(1)}deg)
+      scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)}) translateY(${lift.toFixed(1)}%)`;
     if (i + 1 < n && chars[i + 1] !== " ") {
-      anchor.style.marginRight = "0.05em";
+      span.style.marginRight = "0.05em";
     } else if (i + 1 >= n || chars[i + 1] === " ") {
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-      anchor.style.marginRight = (0.18 * ws).toFixed(3) + "em";
+      span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
     }
-    frag.appendChild(anchor);
+    frag.appendChild(span);
   }
   el.appendChild(frag);
 }
+
 
 /* ---------- control manual: distancia entre palabras ---------- */
 
@@ -1356,25 +1343,10 @@ function setLyric(text, back) {
   if (!eggActive) { $("lCur").style.color = "" }   // restaurar contraste dinámico
   // con la LENTE activa el texto va PLANO: la deformación la hace el filtro por píxel
   applyLens();
-  if (!cfg.fish || eggActive) {
-    applyFisheye($("lCur"), text);
-  } else {
-    const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-    const el = $("lCur");
-    el.textContent = "";
-    text.split(/(\s+)/).forEach(part => {
-      if (/^\s+$/.test(part)) {
-        const sp = document.createElement("span");
-        sp.textContent = "\u00A0\u00A0";
-        sp.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
-        sp.style.marginRight = (0.1 * ws).toFixed(3) + "em";
-        sp.style.display = "inline-block";
-        el.appendChild(sp);
-      } else if (part) {
-        el.appendChild(document.createTextNode(part));
-      }
-    });
-  }
+  // text-align:center heredado del #lyrics garantiza centrado perfecto
+  $("lCur").style.textAlign = "center";
+  $("lBack").style.textAlign = "center";
+  applyFisheye($("lCur"), text);
   // SUBTÍTULO: backs/paréntesis o TRADUCCIÓN como línea secundaria opaca
   const backEl = $("lBack");
   if (back) {
