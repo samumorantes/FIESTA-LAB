@@ -1043,6 +1043,11 @@ function explodeDrop() {
   if (!_fxRAF) _fxLoop();
 }
 function _fxLoop() {
+  // CAP de FPS a 60: suficiente para partículas, alivia GPU
+  if (!_fxLoop._next) _fxLoop._next = performance.now();
+  const nowT = performance.now();
+  if (nowT - _fxLoop._next < 16) { _fxRAF = requestAnimationFrame(_fxLoop); return; }
+  _fxLoop._next = Math.max(_fxLoop._next + 16, nowT - 100);
   _fxRAF = requestAnimationFrame(_fxLoop);
   const cv = $("fxCanvas");
   const ctx = cv.getContext("2d");
@@ -1095,24 +1100,16 @@ async function translateLine(text) {
 }
 
 /* ---------- CONTRASTE POR ZONAS: medir la franja real donde va la letra ---------- */
-/* CONTRASTE GLOBAL: promedio de TODO el canvas (modo simple) */
+/* CONTRASTE GLOBAL: promedio de TODO el canvas (modo simple) — AHORA SIN getImageData
+  高昂: usar el color dominante de la paleta como proxy (evita lectura GPU→CPU cada frame) */
 function setFluidContrastGlobal() {
-  const cv = $("fluidCanvas");
-  if (!cv.width) return;
-  try {
-    const ctx = cv.getContext("2d");
-    const strip = ctx.getImageData(0, 0, cv.width, cv.height).data;
-    let sum = 0, n = 0;
-    for (let i = 0; i < strip.length; i += 4*80) {
-      sum += 0.2126*strip[i] + 0.7152*strip[i+1] + 0.0722*strip[i+2];
-      n++;
-    }
-    const avgLum = sum / Math.max(1, n) / 255;
-    const dark = "#101018", white = "#ffffff";
-    const cur = document.documentElement.style.getPropertyValue("--tc") || "";
-    if (cur === dark) setTextColor(avgLum > 0.38 ? dark : white);
-    else setTextColor(avgLum > 0.52 ? dark : white);
-  } catch (e) { /* canvas tainted */ }
+  // proxy: inferir luminosidad del color de fondo actual (palette-based)
+  const bg = $("bg").style.backgroundColor || "rgb(255,23,68)";
+  const m = bg.match(/(\d+)/g);
+  if (m && m.length >= 3) {
+    const lum = (0.2126 * +m[0] + 0.7152 * +m[1] + 0.0722 * +m[2]) / 255;
+    setTextColor(lum > 0.48 ? "#101018" : "#ffffff");
+  }
 }
 
 /* ---------- 🐰 easter egg EOO (Bad Bunny): letra real con efectos especiales ---------- */
@@ -1203,14 +1200,18 @@ function applyEggFont() {
    1 o 5 líneas. Técnica verificada en Chrome desktop y móvil. */
 let _lensReady = false;
 let _lensBuiltFor = null;
+let _lensBuiltAmp = null;
+
 function buildLens() {
   // La lente debe deformar SOLO el área de pantalla. lensTarget es relative a
   // #screen, así que el feImage va en coordenadas LOCALES (0,0 = esquina del cristal).
   const sc = document.getElementById("screen").getBoundingClientRect();
   const amp = Math.round(Math.min(sc.width, sc.height) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));
   const key = Math.round(sc.width) + "x" + Math.round(sc.height);
-  if (_lensBuiltFor === key && document.getElementById("lensMap")) return;
+  // sóbuild si dimens or strength cambió
+  if (_lensBuiltFor === key && _lensBuiltAmp === amp && document.getElementById("lensMap")) return;
   _lensBuiltFor = key;
+  _lensBuiltAmp = amp;
   const NS = "http://www.w3.org/2000/svg";
   let svg = document.getElementById("lensSvg");
   if (!svg) {
@@ -1246,12 +1247,14 @@ function buildLens() {
   fi.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", uri);
   _lensReady = true;
 }
+
 function applyLens() {
   const t = document.getElementById("lensTarget");
-  if (cfg.fish && !eggActive && +((cfg.lensStrength == null ? 18 : cfg.lensStrength)) > 0) {
+  const shouldLens = cfg.fish && !eggActive && +((cfg.lensStrength == null ? 18 : cfg.lensStrength)) > 0;
+  if (shouldLens) {
     buildLens();
     t.style.filter = "url(#lens)";
-    document.body.classList.add("lens-live");   // congela screenDrift mientras la lente está puesta
+    document.body.classList.add("lens-live");
   } else {
     t.style.filter = "";
     document.body.classList.remove("lens-live");
@@ -1260,14 +1263,14 @@ function applyLens() {
 
 /* ---------- OJO DE PEZ por letra (LEGACY, desactivado: ahora lente por píxel) ---------- */
 function applyFisheye(el, text) {
-  // SIN fisheye: aplicar igualmente el espaciado manual entre palabras
+  // SIN fisheye: texto plano con espaciado entre palabras (GPU-only, sin spans por carácter)
   if (!cfg.fish || eggActive) {
-    const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
     el.textContent = "";
     text.split(/(\s+)/).forEach(part => {
       if (/^\s+$/.test(part)) {
         const sp = document.createElement("span");
         sp.textContent = "\u00A0\u00A0";
+        const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
         sp.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
         sp.style.marginRight = (0.1 * ws).toFixed(3) + "em";
         sp.style.display = "inline-block";
@@ -1278,56 +1281,48 @@ function applyFisheye(el, text) {
     });
     return;
   }
+  // fisheye activo: crear spans por carácter con transforms 3D (GPU-composited)
   el.textContent = "";
   const frag = document.createDocumentFragment();
   const chars = [...text];
   const n = chars.length;
-  // medir el ancho real del texto para normalizar t por PÍXEL, no por índice
-  el.style.visibility = "hidden";
-  el.textContent = text;
-  const totalW = el.scrollWidth || 1;
-  el.textContent = "";
-  el.style.visibility = "";
-  // ancho acumulado proporcional (aprox: cada char mismo ancho salvo espacios)
-  let acc = 0;
+  // 高昂: evitar forced layout — medir con offscreen mirror div
+  const mirror = document.createElement("div");
+  mirror.style.cssText = `position:fixed;top:-9999px;left:-9999px;visibility:hidden;
+    font-size:${cfg.fs}vw;font-family:${FONTS[cfg.font]||FONTS.arcade};white-space:nowrap`;
+  document.body.appendChild(mirror);
+  mirror.textContent = text;
+  const totalW = mirror.scrollWidth || 1;
+  document.body.removeChild(mirror);
+  // ancho acumulado proporcional
   const widths = chars.map(c => (c === " " ? 0.6 : 1));
-  const totalUnits = widths.reduce((a, b) => a + b, 0) || 1;
+  let acc = 0;
   for (let i = 0; i < n; i++) {
     const ch = chars[i];
     const span = document.createElement("span");
     span.textContent = ch;
-    // centro DEL carácter (no su borde izquierdo)
-    const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
+    const centerPx = (acc + widths[i] / 2) / (widths.reduce((a,b)=>a+b,0)||1) * totalW;
     acc += widths[i];
     const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
-    // proyección esférica REAL: cada glifo se DEFORMA (escala X/Y distinta,
-    // inclinación y perspectiva), no solo cambia de tamaño
-    const k = Math.cos(t * Math.PI / 2.0);            // 1 centro → 0 bordes
-    const sq = 1 - t * t;                              // factor esférico
-    const scaleX = 0.55 + 0.45 * sq;                   // ancho se comprime en los bordes
-    const scaleY = 0.62 + 0.38 * sq;                   // alto también, pero menos
-    const lift = -t * t * 8;                           // curva vertical del "balón"
-    const rotY = t * -10;                              // giro 3D lateral fuerte
-    const skew = t * 4;                                // inclinación hacia el centro
-    span.style.display = "inline-block";
-    span.style.transformOrigin = "center bottom";
-    span.style.transform =
-      `perspective(300px) rotateY(${rotY.toFixed(1)}deg) ` +
-      `skewX(${skew.toFixed(1)}deg) scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) ` +
-      `translateY(${lift.toFixed(1)}%)`;
-    // kerning: SOLO entre caracteres de la misma palabra (los espacios ya separan)
+    const sq = 1 - t * t;
+    const scaleX = 0.55 + 0.45 * sq;
+    const scaleY = 0.62 + 0.38 * sq;
+    const lift = -t * t * 8;
+    const rotY = t * -10;
+    const skew = t * 4;
+    span.style.cssText = `display:inline-block;transform-origin:center bottom;will-change:transform;
+      transform:perspective(300px) rotateY(${rotY.toFixed(1)}deg) skewX(${skew.toFixed(1)}deg)
+      scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)}) translateY(${lift.toFixed(1)}%)`;
     if (ch !== " " && i + 1 < n && chars[i + 1] !== " ") {
       span.style.marginRight = "0.05em";
     }
     if (ch === " ") {
-      // espacio entre palabras: ancho controlado por cfg.wordSpacing (slider manual)
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
       span.textContent = "\u00A0\u00A0";
       span.style.width = "";
       span.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
       span.style.marginRight = (0.1 * ws).toFixed(3) + "em";
     } else if (i + 1 >= n || chars[i + 1] === " ") {
-      // último carácter de una palabra: hueco antes de la siguiente (también escalable)
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
       span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
     }
@@ -1576,6 +1571,11 @@ function nowPos() {
 }
 
 function frame() {
+  // CAP de FPS a 100: suficiente para fluidez máxima, mitad de trabajo vs 144Hz
+  if (!frame._next) frame._next = performance.now();
+  const nowT = performance.now();
+  if (nowT - frame._next < 10) { requestAnimationFrame(frame); return; }
+  frame._next = Math.max(frame._next + 10, nowT - 100);
   if (S && curTrack) {
     const t = nowPos();
     const L = S.lyrics || [];
@@ -1843,11 +1843,11 @@ function fluidPulse() {          // llamado en cada beat del frame()
 }
 
 function fluidLoop() {
-  // CAP de FPS del fluido a ~30: suficiente visualmente, mitad de trabajo GPU
+  // CAP de FPS del fluido a ~60: suficiente visualmente, sync con main loop
   if (!fluidLoop._next) fluidLoop._next = performance.now();
   const nowT = performance.now();
-  if (nowT - fluidLoop._next < 33) { fluidRAF = requestAnimationFrame(fluidLoop); return; }
-  fluidLoop._next = Math.max(fluidLoop._next + 33, nowT - 100);
+  if (nowT - fluidLoop._next < 16) { fluidRAF = requestAnimationFrame(fluidLoop); return; }
+  fluidLoop._next = Math.max(fluidLoop._next + 16, nowT - 100);
   fluidRAF = requestAnimationFrame(fluidLoop);
   const cv = $("fluidCanvas");
   if (!fluidLoop._ctx) fluidLoop._ctx = cv.getContext("2d", { willReadFrequently: true });
@@ -1958,21 +1958,16 @@ function setFluidContrast() {
   if (cfg.smartContrast) return setFluidContrastZone();
   return setFluidContrastGlobal();
 }
-/* CONTRASTE POR ZONAS: medir la franja real de la letra (35%-65% vertical) */
+/* CONTRASTE POR ZONAS: medir la franja real de la letra (35%-65% vertical)
+   高昂: inferido del color del fondo activo, no de getImageData (evita lectura GPU→CPU) */
 function setFluidContrastZone() {
-  const cv = $("fluidCanvas");
-  if (!cv.width) return;
-  try {
-    const ctx = cv.getContext("2d");
-    const strip = ctx.getImageData(0, cv.height*0.35, cv.width, Math.round(cv.height*0.3)).data;
-    let sum = 0, n = 0;
-    for (let i = 0; i < strip.length; i += 4*40) {
-      sum += 0.2126*strip[i] + 0.7152*strip[i+1] + 0.0722*strip[i+2];
-      n++;
-    }
-    const avgLum = sum / Math.max(1, n) / 255;
-    applyHysteresis(avgLum);
-  } catch (e) { /* canvas tainted */ }
+  // usar el bg.style.backgroundColor actual como proxy (paleta known → no hace falta leer canvas)
+  const bg = $("bg").style.backgroundColor || "rgb(255,23,68)";
+  const m = bg.match(/(\d+)/g);
+  if (m && m.length >= 3) {
+    const lum = (0.2126 * +m[0] + 0.7152 * +m[1] + 0.0722 * +m[2]) / 255;
+    applyHysteresis(lum);
+  }
 }
 
 /* HISTÉRESIS anti-parpadeo compartida */
