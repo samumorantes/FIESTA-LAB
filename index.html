@@ -1044,11 +1044,6 @@ function explodeDrop() {
   if (!_fxRAF) _fxLoop();
 }
 function _fxLoop() {
-  // CAP de FPS a 60: suficiente para partículas, alivia GPU
-  if (!_fxLoop._next) _fxLoop._next = performance.now();
-  const nowT = performance.now();
-  if (nowT - _fxLoop._next < 16) { _fxRAF = requestAnimationFrame(_fxLoop); return; }
-  _fxLoop._next = Math.max(_fxLoop._next + 16, nowT - 100);
   _fxRAF = requestAnimationFrame(_fxLoop);
   const cv = $("fxCanvas");
   const ctx = cv.getContext("2d");
@@ -1572,11 +1567,8 @@ function nowPos() {
 }
 
 function frame() {
-  // CAP de FPS a 100: suficiente para fluidez máxima, mitad de trabajo vs 144Hz
-  if (!frame._next) frame._next = performance.now();
+  // Sin cap de FPS: requestAnimationFrame va a la velocidad máxima del hardware
   const nowT = performance.now();
-  if (nowT - frame._next < 10) { requestAnimationFrame(frame); return; }
-  frame._next = Math.max(frame._next + 10, nowT - 100);
 
   // FPS counter — actualiza cada segundo
   if (!frame._fpsCtx) frame._fpsCtx = { frames: 0, last: performance.now(), shown: false };
@@ -1858,12 +1850,8 @@ function fluidPulse() {          // llamado en cada beat del frame()
 }
 
 function fluidLoop() {
-  // CAP de FPS del fluido a ~60: suficiente visualmente, sync con main loop
-  if (!fluidLoop._next) fluidLoop._next = performance.now();
-  const nowT = performance.now();
-  if (nowT - fluidLoop._next < 16) { fluidRAF = requestAnimationFrame(fluidLoop); return; }
-  fluidLoop._next = Math.max(fluidLoop._next + 16, nowT - 100);
   fluidRAF = requestAnimationFrame(fluidLoop);
+  const nowT = performance.now();
   const cv = $("fluidCanvas");
   if (!fluidLoop._ctx) fluidLoop._ctx = cv.getContext("2d", { willReadFrequently: true });
   const ctx = fluidLoop._ctx;
