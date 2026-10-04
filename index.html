@@ -179,9 +179,9 @@
     transform:scale(.94);filter:blur(.4px);opacity:.36}
   /* ====== LETRA ====== */
   #lyrics{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:11vh 6vw;color:var(--tc);transition:color .15s;z-index:2;pointer-events:none}
+  #lyrics .line{text-align:center;margin:0 auto;display:block;max-width:100%}
   #lyrics.no-glow .line{text-shadow:none}
   #lyrics.upper .line{text-transform:uppercase}
-  /* song-flash: cuando cambia de canción se ve un flash blanco */
   @keyframes song-flash {
     0%{opacity:1;text-shadow:none}
     40%{opacity:.85;text-shadow:0 0 6vw #fff}
@@ -1257,7 +1257,11 @@ function applyLens() {
   }
 }
 
-/* ---------- OJO DE PEZ por letra (LEGACY, desactivado: ahora lente por píxel) ---------- */
+/* ---------- OJO DE PEZ por letra (LEGACY, desactivado: ahora lente por píxel) ----------
+   高昂: garantizar centrado visual aunque cada glifo tenga transforms 3D pesados.
+   Truco: envolver cada char en un span "anchor" con position:relative y left:50%,
+   y poner el transform 3D dentro de un span hijo (translateX -50%) → el glifo
+   se centra siempre respecto a su posición en el flujo, sin importar la deformación. */
 function applyFisheye(el, text) {
   // SIN fisheye: texto plano con espaciado entre palabras (GPU-only, sin spans por carácter)
   if (!cfg.fish || eggActive) {
@@ -1277,12 +1281,13 @@ function applyFisheye(el, text) {
     });
     return;
   }
-  // fisheye activo: crear spans por carácter con transforms 3D (GPU-composited)
+  // fisheye activo: cada carácter va dentro de un anchor centrado (left:50% + transform:translateX(-50%)).
+  // Garantiza que la deformación 3D no empuje el texto visualmente fuera del centro.
   el.textContent = "";
   const frag = document.createDocumentFragment();
   const chars = [...text];
   const n = chars.length;
-  // 高昂: evitar forced layout — medir con offscreen mirror div
+  // medir el ancho total con un mirror offscreen (no fuerza layout del contenedor real)
   const mirror = document.createElement("div");
   mirror.style.cssText = `position:fixed;top:-9999px;left:-9999px;visibility:hidden;
     font-size:${cfg.fs}vw;font-family:${FONTS[cfg.font]||FONTS.arcade};white-space:nowrap`;
@@ -1290,14 +1295,23 @@ function applyFisheye(el, text) {
   mirror.textContent = text;
   const totalW = mirror.scrollWidth || 1;
   document.body.removeChild(mirror);
-  // ancho acumulado proporcional
   const widths = chars.map(c => (c === " " ? 0.6 : 1));
+  const totalUnits = widths.reduce((a,b) => a + b, 0) || 1;
   let acc = 0;
   for (let i = 0; i < n; i++) {
     const ch = chars[i];
-    const span = document.createElement("span");
-    span.textContent = ch;
-    const centerPx = (acc + widths[i] / 2) / (widths.reduce((a,b)=>a+b,0)||1) * totalW;
+    if (ch === " ") {
+      const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
+      const sp = document.createElement("span");
+      sp.textContent = "\u00A0\u00A0";
+      sp.style.cssText = `display:inline-block;margin-left:${(0.1*ws).toFixed(3)}em;margin-right:${(0.1*ws).toFixed(3)}em`;
+      frag.appendChild(sp);
+      acc += widths[i];
+      continue;
+    }
+    const inner = document.createElement("span");
+    inner.textContent = ch;
+    const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
     acc += widths[i];
     const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
     const sq = 1 - t * t;
@@ -1306,23 +1320,23 @@ function applyFisheye(el, text) {
     const lift = -t * t * 8;
     const rotY = t * -10;
     const skew = t * 4;
-    span.style.cssText = `display:inline-block;transform-origin:center bottom;will-change:transform;
-      transform:perspective(300px) rotateY(${rotY.toFixed(1)}deg) skewX(${skew.toFixed(1)}deg)
-      scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)}) translateY(${lift.toFixed(1)}%)`;
-    if (ch !== " " && i + 1 < n && chars[i + 1] !== " ") {
-      span.style.marginRight = "0.05em";
-    }
-    if (ch === " ") {
-      const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-      span.textContent = "\u00A0\u00A0";
-      span.style.width = "";
-      span.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
-      span.style.marginRight = (0.1 * ws).toFixed(3) + "em";
+    // anchor: positioned relative, left 50% → centro del carácter, luego del-
+    //        transform translateX -50% → el char se centra respecto al anchor
+    const anchor = document.createElement("span");
+    anchor.style.cssText = `display:inline-block;position:relative;height:1em;vertical-align:baseline`;
+    inner.style.cssText = `display:inline-block;position:absolute;left:50%;top:0;
+      transform-origin:center center;will-change:transform;
+      transform:translateX(-50%) perspective(300px) rotateY(${rotY.toFixed(1)}deg)
+      skewX(${skew.toFixed(1)}deg) scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)})
+      translateY(${lift.toFixed(1)}%)`;
+    anchor.appendChild(inner);
+    if (i + 1 < n && chars[i + 1] !== " ") {
+      anchor.style.marginRight = "0.05em";
     } else if (i + 1 >= n || chars[i + 1] === " ") {
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-      span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
+      anchor.style.marginRight = (0.18 * ws).toFixed(3) + "em";
     }
-    frag.appendChild(span);
+    frag.appendChild(anchor);
   }
   el.appendChild(frag);
 }
