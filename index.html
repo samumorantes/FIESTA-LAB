@@ -313,8 +313,8 @@
   <div id="source">LETRAS: LRCLIB + SPOTIFY + LYRICS.OVH · RITMO: AUDIO ANALYSIS</div>
   <div id="queueTicker"><span id="queueLabel">A CONTINUACIÓN</span><span id="queueText"></span></div>
   <div id="syncLed" class="offline" title="Estado de sincronización"><i></i><span id="syncText">OFFLINE</span></div>
-  <div id="fpsCounter" style="position:fixed;left:10px;top:10px;z-index:9999;font:bold 13px 'SpaceGrotesk',monospace;color:#00ff88;text-shadow:0 0 6px rgba(0,255,136,.6);pointer-events:none;display:none">-- fps</div>
- </div><!-- /lensTarget -->
+  </div><!-- /lensTarget -->
+ <div id="fpsCounter" style="position:fixed;left:10px;top:10px;z-index:9999;font:bold 13px 'SpaceGrotesk',monospace;color:#00ff88;text-shadow:0 0 6px rgba(0,255,136,.6);pointer-events:none;display:none">-- fps</div>
 
   <button id="gear" title="Ajustes">⚙</button>
 
@@ -516,7 +516,25 @@ const CFG_DEFAULTS = {
 const PRESET_KEYS = Object.keys(CFG_DEFAULTS).filter(k =>
   !["moodOverride","_specialTrack"].includes(k));   // el modo se decide por canción; estado interno no
 const cfg = Object.assign({}, CFG_DEFAULTS);
-try { Object.assign(cfg, JSON.parse(localStorage.getItem("fv_cfg") || "{}")); } catch (e) {}
+try {
+  const stored = JSON.parse(localStorage.getItem("fv_cfg") || "{}");
+  // sanear: si localStorage tiene tipos incorrectos (corrupción, version previa, hack),
+  // resetear el campo al default en lugar de aceptar basura.
+  for (const k of Object.keys(stored)) {
+    const def = CFG_DEFAULTS[k];
+    if (def === undefined) continue;
+    const v = stored[k];
+    if (typeof def === "number") {
+      cfg[k] = (typeof v === "number" && Number.isFinite(v)) ? v : def;
+    } else if (typeof def === "boolean") {
+      cfg[k] = !!v;
+    } else if (Array.isArray(def)) {
+      cfg[k] = Array.isArray(v) ? v : def;
+    } else {
+      cfg[k] = (typeof v === typeof def) ? v : def;
+    }
+  }
+} catch (e) { /* JSON corrupto → defaults */ }
 // La paleta debe reaccionar al beat real, no a barras antiguas guardadas.
 cfg.timing = "beats";
 
@@ -528,31 +546,19 @@ function bindRange(id, key, valId, fmt) {
   el.oninput = e => { cfg[key] = +e.target.value; $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key]; save(); applyCfg(); };
   if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
 }
-// bindRange que además fuerza recarga del estado del server (para "palabras por frase")
-function bindRangeReload(id, key, valId, fmt) {
+// Versión extendida de bindRange: hace reload del /api/state al final del debounce.
+// Usado por sliders que cambian el reparto de frases (phrase).
+function bindRangeReload(id, key, valId, fmt, after) {
   let _t = null;
   const el = $(id);
   el.value = cfg[key];
   el.oninput = e => {
     cfg[key] = +e.target.value;
-    $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
+    if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
     save();
-    // re-repartir las frases YA con el nuevo tamaño (sin esperar al server):
-    // invalidar punteros para que el próximo tick recargue el estado completo
     clearTimeout(_t);
     _t = setTimeout(async () => {
-      try {
-        const r = await fetch("/api/state?mw=" + cfg.phrase + "&force=1", { cache: "no-store" });
-        const ns = await r.json();
-        if (ns && ns.track) {
-          S = ns;
-          lineIdx = -1; lastShown = null; setLyric._last = 0;   // fuerza re-render completo
-          // repintar la línea actual al instante con el nuevo reparto
-          const L0 = S.lyrics || [];
-          while (lineIdx + 1 < L0.length && L0[lineIdx + 1].t <= pos) lineIdx++;
-          if (lineIdx >= 0 && lineIdx < L0.length) { lastShown = L0[lineIdx].text; setLyric(lastShown, L0[lineIdx].back); }
-        }
-      } catch (err) {}
+      try { await after(); } catch (err) {}
     }, 350);
   };
   if (valId) $(valId).textContent = fmt ? fmt(cfg[key]) : cfg[key];
@@ -572,16 +578,28 @@ bindRange("fsRange", "fs", "fsVal");
 (function(){ const el=$("fsRange"); const prev=el.oninput;
   el.oninput = e => { prev(e); if (lastShown) setLyric(lastShown, (S.lyrics||[])[lineIdx] ? (S.lyrics[lineIdx].back) : null); }; })();
 // phrase usa bindRangeReload: necesita recargar /api/state para repartir las frases
-(function(){ const el=$("phraseRng"); el.oninput = null; })();
-bindRangeReload("phraseRng", "phrase", "phraseVal", v => v + " palabras");
+bindRangeReload("phraseRng", "phrase", "phraseVal", v => v + " palabras", async () => {
+  const r = await fetch("/api/state?mw=" + cfg.phrase + "&force=1", { cache: "no-store" });
+  const ns = await r.json();
+  if (ns && ns.track) {
+    S = ns;
+    lineIdx = -1; lastShown = null; setLyric._last = 0;   // fuerza re-render completo
+    const L0 = S.lyrics || [];
+    while (lineIdx + 1 < L0.length && L0[lineIdx + 1].t <= pos) lineIdx++;
+    if (lineIdx >= 0 && lineIdx < L0.length) {
+      lastShown = L0[lineIdx].text;
+      setLyric(lastShown, L0[lineIdx].back);
+    }
+  }
+});
 bindRange("wordSpRng", "wordSpacing", "wordSpVal", v => v.toFixed(1) + "×");
 // ESPACIO entre palabras en vivo: repintar la línea actual al mover el slider
 (function(){ const el=$("wordSpRng"); const prev=el.oninput;
   el.oninput = e => { prev(e); if (lastShown) setLyric(lastShown, (S.lyrics||[])[lineIdx] ? (S.lyrics[lineIdx].back) : null); }; })();
 bindRange("lensRng", "lensStrength", "lensVal");
-// el slider de lente reconstruye el mapa con la nueva amplitud
+// el slider de lente reconstruye el mapa solo si la amplitud cambió
 (function(){ const el=$("lensRng"); const prev=el.oninput;
-  el.oninput = e => { prev(e); _lensReady = false; applyLens(); }; })();
+  el.oninput = e => { prev(e); applyLens(); }; })();
 bindRange("scanRng", "scan", "scanVal");
 bindRange("maskRng", "mask", "maskVal");
 bindRange("vigRng", "vig", "vigVal");
@@ -618,6 +636,8 @@ $("themeSel").addEventListener("change", () => {
 $("testChan").onclick = playChannel;
 $("resetBtn").onclick = () => {
   Object.assign(cfg, CFG_DEFAULTS);
+  _presetAppliedFor = null; _presetWasActive = false;
+  cfg._specialTrack = null;
   save(); applyCfg(); syncAllControls();
   $("testChan").textContent = "✓ Configuración restablecida";
   setTimeout(() => { $("testChan").textContent = "Probar transición"; }, 1500);
@@ -652,6 +672,8 @@ function applyPreset(p, label) {
   if (cfg.theme && THEMES[cfg.theme]) applyTheme(cfg.theme);
   save(); applyCfg(); syncAllControls();
   showToast("💾 PRESET: " + label);
+  // NUNCA limpiar coverPalette aquí: applyCfg → renderState gestiona la paleta
+  // y extractCoverPalette la asignará de nuevo si el preset no fija customPal.
 }
 /* Restaurar la config habitual del usuario (sin presets): recarga fv_cfg */
 function restoreBaseConfig() {
@@ -906,10 +928,20 @@ function syncCrtControls() {
   });
 }
 
+let _saveTimer = null;
+let _savePending = false;
 function save() {
-  // estado interno: NO persistir
-  const { _specialTrack, ...persist } = cfg;
-  localStorage.setItem("fv_cfg", JSON.stringify(persist));
+  // throttle: muchos cambios seguidos (sliders) → escribir a localStorage a lo sumo
+  // cada 500ms, agrupando todos los cambios intermedios.
+  _savePending = true;
+  if (_saveTimer) return;
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    if (!_savePending) return;
+    _savePending = false;
+    const { _specialTrack, ...persist } = cfg;
+    try { localStorage.setItem("fv_cfg", JSON.stringify(persist)); } catch (e) {}
+  }, 500);
 }
 function applyCfg() {
   const r = document.documentElement.style;
@@ -1050,6 +1082,7 @@ function explodeDrop() {
   if (!_fxRAF) _fxLoop();
 }
 function _fxLoop() {
+  try {
   _fxRAF = requestAnimationFrame(_fxLoop);
   const cv = $("fxCanvas");
   const ctx = cv.getContext("2d");
@@ -1065,6 +1098,7 @@ function _fxLoop() {
     ctx.fillRect(p.x, p.y, p.size, p.size);
   }
   ctx.globalAlpha = 1;
+  } catch (e) { console.error("_fxLoop error", e); }
 }
 
 /* ---------- 📱 QR GIGANTE (tecla Q) ---------- */
@@ -1200,7 +1234,6 @@ function applyEggFont() {
    Mapa de desplazamiento generado en canvas e inyectado en un <feImage> inline.
    Deforma los pixeles respecto al CENTRO DE LA PANTALLA: funciona igual con
    1 o 5 líneas. Técnica verificada en Chrome desktop y móvil. */
-let _lensReady = false;
 let _lensBuiltFor = null;
 let _lensBuiltAmp = null;
 
@@ -1247,7 +1280,6 @@ function buildLens() {
   const fi = svg.querySelector("feImage");
   fi.setAttribute("href", uri);
   fi.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", uri);
-  _lensReady = true;
 }
 
 function applyLens() {
@@ -1512,6 +1544,7 @@ function nowPos() {
 }
 
 function frame() {
+  try {
   // Sin cap de FPS: requestAnimationFrame va a la velocidad máxima del hardware
   const nowT = performance.now();
 
@@ -1661,6 +1694,11 @@ function frame() {
     }
   }
   frame._raf = requestAnimationFrame(frame);
+  } catch (e) {
+    // un error en un frame no debe matar el bucle entero
+    console.error("frame error", e);
+    frame._raf = requestAnimationFrame(frame);
+  }
 }
 
 /* ---------- color + ritmo ---------- */
@@ -1801,6 +1839,7 @@ function fluidPulse() {          // llamado en cada beat del frame()
 }
 
 function fluidLoop() {
+  try {
   fluidRAF = requestAnimationFrame(fluidLoop);
   const nowT = performance.now();
   const cv = $("fluidCanvas");
@@ -1868,6 +1907,7 @@ function fluidLoop() {
     fluidLoop._fc = performance.now();
     setFluidContrast();
   }
+  } catch (e) { console.error("fluidLoop error", e); }
 }
 
 /* Volver al modo fiesta: alias conservado por compatibilidad con código que ya lo usa */
