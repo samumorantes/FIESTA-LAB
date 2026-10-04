@@ -14,7 +14,7 @@ with sync_playwright() as p:
         # inject some lyrics to make sure we see something rendered
         page.evaluate("""() => {
           const el = document.getElementById('lCur');
-          if (el) { el.textContent = 'HOLA MUNDO'; window.setLyric('HOLA MUNDO', null); }
+          if (el) { el.textContent = 'HOLA MUNDO'; }
         }""")
         page.wait_for_timeout(800)
         page.screenshot(path=f'C:/Users/moran/FIESTA-LAB/_dbg/snap_{vw}x{vh}.png')

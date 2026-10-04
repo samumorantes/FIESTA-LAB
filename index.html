@@ -42,9 +42,10 @@
   body.lens-live #screen{animation:none}
   /* TARGET del lente: capas visuales (fondo+letra+CRT). La UI vive fuera → clickeable */
   #lensTarget{position:absolute;inset:0;pointer-events:none}
-  /* con lente activa el contenido se escala para LLENAR el cristal:
-     la lente encoge los bordes (displacement) → pre-ampliar compensa */
-  body.lens-live #lensTarget{transform:scale(1.38);transform-origin:50% 50%}
+  /* con lente activa NO escalar #lensTarget: el feDisplacementMap con amp adecuada
+     cubre la deformación visualmente. Escalar el target multiplica el coste del
+     filtro (cada píxel del filtro tiene que muestrear un área más grande). */
+  body.lens-live #lensTarget{transform:none}
   #screen.tilt-off{transform:none;animation:none}
   @keyframes screenDrift{
     0%{transform:perspective(1100px) rotateX(1.1deg) rotateY(.4deg) translate(0,0)}
@@ -346,8 +347,8 @@
       <input id="phraseRng" type="range" min="1" max="8" step="1" value="4"></div>
     <div class="row"><label>Espacio entre palabras: <span class="val" id="wordSpVal">1.0×</span></label>
       <input id="wordSpRng" type="range" min="0" max="3" step="0.1" value="1"></div>
-    <div class="row"><label>Intensidad ojo de pez: <span class="val" id="lensVal">18</span></label>
-      <input id="lensRng" type="range" min="0" max="60" step="2" value="18"></div>
+    <div class="row"><label>Intensidad ojo de pez: <span class="val" id="lensVal">12</span></label>
+      <input id="lensRng" type="range" min="0" max="40" step="2" value="12"></div>
     <div class="chk"><input id="upperChk" type="checkbox"> MAYÚSCULAS</div>
     <div class="row"><label>Grosor del borde: <span class="val" id="strokeVal">2</span></label>
       <input id="strokeRng" type="range" min="0" max="6" step="1" value="2"></div>
@@ -493,7 +494,7 @@ const THEMES = {
           flicker: false, tilt: false, refresh: false, fish: false },
 };
 const CFG_DEFAULTS = {
-  fs: 7, font: "arcade", phrase: 4, wordSpacing: 1.0, lensStrength: 18, upper: false,
+  fs: 7, font: "arcade", phrase: 4, wordSpacing: 1.0, lensStrength: 12, upper: false,
   stroke: 2, shadow: 50,
   timing: "beats", mode: "rgb", pulseColor: true, pulseWhite: false, flashStrength: 40,
   scan: 70, mask: 60, vig: 70, noise: 50, flicker: true, tilt: true, refresh: true,
@@ -597,9 +598,10 @@ bindRange("wordSpRng", "wordSpacing", "wordSpVal", v => v.toFixed(1) + "×");
 (function(){ const el=$("wordSpRng"); const prev=el.oninput;
   el.oninput = e => { prev(e); if (lastShown) setLyric(lastShown, (S.lyrics||[])[lineIdx] ? (S.lyrics[lineIdx].back) : null); }; })();
 bindRange("lensRng", "lensStrength", "lensVal");
-// el slider de lente reconstruye el mapa solo si la amplitud cambió
+// el slider de lente reconstruye el mapa al final del drag (debounce 200ms)
 (function(){ const el=$("lensRng"); const prev=el.oninput;
-  el.oninput = e => { prev(e); applyLens(); }; })();
+  let _t = null;
+  el.oninput = e => { prev(e); clearTimeout(_t); _t = setTimeout(() => { _lensBuiltFor = null; applyLens(); }, 200); }; })();
 bindRange("scanRng", "scan", "scanVal");
 bindRange("maskRng", "mask", "maskVal");
 bindRange("vigRng", "vig", "vigVal");
@@ -1237,13 +1239,26 @@ function applyEggFont() {
 let _lensBuiltFor = null;
 let _lensBuiltAmp = null;
 
+/* ---------- OJO DE PEZ REAL: lente por PÍXEL (SVG filter) ----------
+   El feDisplacementMap se ejecuta EN CADA FRAME sobre toda el área del filtro.
+   Para minimizar el coste:
+   1. Resolución del mapa de desplazamiento: 96x96 (suficiente para deformación
+      suave — el navegador interpola linealmente al samplear). Un mapa más grande
+      solo se ve diferente en zooms extremos; 96x96 es invisible para el ojo.
+   2. El mapa se cachea en Uint8ClampedArray y se inyecta como data URI solo cuando
+      cambian dimensiones o amplitud.
+   3. SVG filter fuera de pantalla (width=0 height=0) — solo se usa como definición,
+      el navegador lo aplica al #lensTarget via CSS filter.
+   5. Reescritura del mapa con toDataURL solo cuando cambia; en cambio de slider
+      se rebuildea solo al final del debounce (no en cada oninput). */
+let _lensBuiltFor = null;
+let _lensBuiltAmp = null;
+let _lensMapDataURI = null;   // cache del data URI para no re-encodear cada frame
+
 function buildLens() {
-  // La lente debe deformar SOLO el área de pantalla. lensTarget es relative a
-  // #screen, así que el feImage va en coordenadas LOCALES (0,0 = esquina del cristal).
   const sc = document.getElementById("screen").getBoundingClientRect();
   const amp = Math.round(Math.min(sc.width, sc.height) * ((cfg.lensStrength == null ? 18 : +cfg.lensStrength) / 100));
   const key = Math.round(sc.width) + "x" + Math.round(sc.height);
-  // sóbuild si dimens or strength cambió
   if (_lensBuiltFor === key && _lensBuiltAmp === amp && document.getElementById("lensMap")) return;
   _lensBuiltFor = key;
   _lensBuiltAmp = amp;
@@ -1256,34 +1271,47 @@ function buildLens() {
     svg.style.position = "fixed"; svg.style.left = "-9999px";
     document.body.appendChild(svg);
   }
+  // Definición del filtro: ancho/alto iguales a la pantalla para que el mapa
+  // se estire exactamente al área del cristal.
+  const w = Math.round(sc.width), h = Math.round(sc.height);
   svg.innerHTML =
-    `<filter id="lens" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">` +
-    `<feImage id="lensMap" x="0" y="0" width="${Math.round(sc.width)}" height="${Math.round(sc.height)}" preserveAspectRatio="none" result="map"/>` +
-    `<feDisplacementMap in="SourceGraphic" in2="map" scale="${amp}" ` +
+    `<filter id="lens" x="0" y="0" width="${w}" height="${h}" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse">` +
+    `<feImage id="lensMap" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="map"/>` +
+    // feGaussianBlur suaviza el mapa → muestreo más estable cuando el navegador
+    // interpola. Coste despreciable (se hace 1 vez al construir).
+    `<feGaussianBlur in="map" stdDeviation="6" result="mapBlur"/>` +
+    `<feDisplacementMap in="SourceGraphic" in2="mapBlur" scale="${amp}" ` +
     `xChannelSelector="R" yChannelSelector="G"/>` +
     `</filter>`;
-  // mapa barril en coordenadas locales del cristal (W×H del propio screen)
-  const W = Math.max(64, Math.round(sc.width / 4)), H = Math.max(64, Math.round(sc.height / 4));
-  const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
-  const g = cv.getContext("2d"); const img = g.createImageData(W, H); const d = img.data;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const vx = (x - W / 2) / (W / 2), vy = (y - H / 2) / (H / 2);
-    const rn = Math.min(1, Math.sqrt(vx * vx + vy * vy));
-    const m = rn * rn;
-    const i = (y * W + x) * 4;
-    d[i]     = Math.max(0, Math.min(255, Math.round(128 + vx * m * 127)));
-    d[i + 1] = Math.max(0, Math.min(255, Math.round(128 + vy * m * 127)));
-    d[i + 2] = 128; d[i + 3] = 255;
+  // Construir mapa de barril 96x96 (256x256 era overkill)
+  const MW = 96, MH = 96;
+  const cv = document.createElement("canvas"); cv.width = MW; cv.height = MH;
+  const g = cv.getContext("2d");
+  const img = g.createImageData(MW, MH);
+  const d = img.data;
+  for (let y = 0; y < MH; y++) {
+    const vy = (y - MH / 2) / (MH / 2);
+    for (let x = 0; x < MW; x++) {
+      const vx = (x - MW / 2) / (MW / 2);
+      const rn = Math.min(1, Math.sqrt(vx * vx + vy * vy));
+      const m = rn * rn;
+      const o2 = (y * MW + x) * 4;
+      d[o2]     = Math.max(0, Math.min(255, Math.round(128 + vx * m * 127)));
+      d[o2 + 1] = Math.max(0, Math.min(255, Math.round(128 + vy * m * 127)));
+      d[o2 + 2] = 128;
+      d[o2 + 3] = 255;
+    }
   }
   g.putImageData(img, 0, 0);
-  const uri = cv.toDataURL();
+  _lensMapDataURI = cv.toDataURL();
   const fi = svg.querySelector("feImage");
-  fi.setAttribute("href", uri);
-  fi.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", uri);
+  fi.setAttribute("href", _lensMapDataURI);
+  fi.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", _lensMapDataURI);
 }
 
 function applyLens() {
   const t = document.getElementById("lensTarget");
+  if (!t) return;
   const shouldLens = cfg.fish && !eggActive && +((cfg.lensStrength == null ? 18 : cfg.lensStrength)) > 0;
   if (shouldLens) {
     buildLens();
