@@ -315,7 +315,7 @@
   <div id="source">LETRAS: LRCLIB + SPOTIFY + LYRICS.OVH · RITMO: AUDIO ANALYSIS</div>
   <div id="queueTicker"><span id="queueLabel">A CONTINUACIÓN</span><span id="queueText"></span></div>
   <div id="syncLed" class="offline" title="Estado de sincronización"><i></i><span id="syncText">OFFLINE</span></div>
-  <div id="fpsCounter" style="position:absolute;left:6px;bottom:6px;z-index:22;font:700 11px/1 'SpaceGrotesk',monospace;letter-spacing:.5px;color:rgba(255,255,255,.55);text-shadow:0 1px 4px rgba(0,0,0,.6);pointer-events:none"></div>
+  <div id="fpsCounter" style="position:fixed;left:10px;top:10px;z-index:9999;font:bold 13px 'SpaceGrotesk',monospace;color:#00ff88;text-shadow:0 0 6px rgba(0,255,136,.6);pointer-events:none;display:none">-- fps</div>
  </div><!-- /lensTarget -->
 
   <button id="gear" title="Ajustes">⚙</button>
@@ -1579,12 +1579,15 @@ function frame() {
   frame._next = Math.max(frame._next + 10, nowT - 100);
 
   // FPS counter — actualiza cada segundo
-  if (!frame._fpsCtx) frame._fpsCtx = { frames: 0, last: performance.now() };
+  if (!frame._fpsCtx) frame._fpsCtx = { frames: 0, last: performance.now(), shown: false };
   frame._fpsCtx.frames++;
   const fpsElapsed = nowT - frame._fpsCtx.last;
-  if (fpsElapsed >= 1000) {
+  if (fpsElapsed >= 500) {
     const fps = Math.round(frame._fpsCtx.frames * 1000 / fpsElapsed);
-    $("fpsCounter").textContent = fps + " fps";
+    const el = $("fpsCounter");
+    el.style.display = "block";
+    el.textContent = fps + " fps";
+    el.style.color = fps >= 90 ? "#00ff88" : fps >= 50 ? "#ffd700" : "#ff4444";
     frame._fpsCtx.frames = 0;
     frame._fpsCtx.last = nowT;
   }
