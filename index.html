@@ -1521,7 +1521,9 @@ function frame() {
   if (S && curTrack) {
     const t = nowPos();
     const L = S.lyrics || [];
-    // PRIMEROS 7 SEGUNDOS: mostrar el título de la canción (intro para el público)
+    // PRIMEROS 7 SEGUNDOS: mostrar el título de la canción (intro para el público).
+    // Tamaño del TÍTULO fijo (5vw) — independiente del slider de letra (que el usuario
+    // suele tener grande tipo 9). Así no se desborda el título al iniciar la canción.
     if (t < 7.0 && S.track) {
       const title = "♪ " + S.track.name + " ♪";
       if (lastShown !== title) {
@@ -1529,9 +1531,11 @@ function frame() {
         stopGrowingE();
         if (eggActive) exitEgg();
         applyEggFont();
+        // pintar el título con tamaño pequeño fijo (5vw), independiente de cfg.fs
+        const savedFs = cfg.fs;
+        cfg.fs = 5;
         setLyric(title, S.track.artist || null);
-        // el título usa SIEMPRE fisheye aunque la letra venga del server:
-        // marcar lastShown evita que S.lyric lo pise en el mismo frame
+        cfg.fs = savedFs;
       }
     } else if (S.lyric && S.lyric.text !== undefined && S.lyric.text !== lastShown) {
       // Server = autoridad. Freno anti-flip: mínimo 400ms entre cambios para que
