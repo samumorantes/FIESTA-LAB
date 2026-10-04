@@ -171,9 +171,8 @@
   #queueLabel{font-size:9px;font-weight:700;letter-spacing:1.5px;opacity:.7;white-space:nowrap}
   #queueText{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.95}
 
-  /* ====== OJO DE PEZ: deformación ESTÁTICA de esfera ======
-     Se aplica POR CARÁCTER en JS (applyFisheye): los spans centrales son
-     grandes y los laterales pequeños/rotados. Aquí solo refuerzos globales. */
+  /* ====== OJO DE PEZ: SOLO filtro por píxel. La deformación la hace el
+       feDisplacementMap (lente SVG) sobre #lensTarget. El texto va SIEMPRE plano. */
   body.fisheye #lyrics{perspective:900px}
   body.fisheye #lyrics .line.back{
     transform:scale(.94);filter:blur(.4px);opacity:.36}
@@ -193,8 +192,7 @@
   .line{font-family:var(--lyric-font);font-size:var(--fs);line-height:1.45;max-width:88vw;
       overflow-wrap:normal;word-break:keep-all;hyphens:none;-webkit-hyphens:none;
       text-shadow:var(--lyric-shadow, 0 0 2.5vmin rgba(255,255,255,.14))}
-  /* spans del fisheye: aislar en GPU para que la máscara RGB no los "fase" */
-  .line.main span{display:inline-block}
+  /* spans del word-spacing (espacios): inline-block para que margin funcione */
   /* SUBTÍTULO: más pequeño y opaco (backs/paréntesis) */
   .line.back{font-size:calc(var(--fs) * .5);opacity:.45;line-height:1.2;
     text-shadow:none;letter-spacing:0}
@@ -1257,74 +1255,25 @@ function applyLens() {
   }
 }
 
+/* ---------- OJO DE PEZ: solo filtro por píxel (lente SVG). El ojo de pez
+   por glifo fue DESCONTINUADO: deformar cada letra con transform 3D hace que
+   los caracteres centrales crezcan y los laterales se encojan/roten, dando
+   el efecto "aAAa" que rompía la legibilidad. Ahora la deformación la hace
+   exclusivamente el feDisplacementMap (filtro por píxel) sobre #lensTarget,
+   y el texto va SIEMPRE plano. Esta función solo respeta wordSpacing. */
 function applyFisheye(el, text) {
-  // SIN fisheye: texto plano con espaciado entre palabras (GPU-only, sin spans por carácter)
-  if (!cfg.fish || eggActive) {
-    el.textContent = "";
-    text.split(/(\s+)/).forEach(part => {
-      if (/^\s+$/.test(part)) {
-        const sp = document.createElement("span");
-        sp.textContent = "\u00A0\u00A0";
-        const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-        sp.style.marginLeft = (0.1 * ws).toFixed(3) + "em";
-        sp.style.marginRight = (0.1 * ws).toFixed(3) + "em";
-        sp.style.display = "inline-block";
-        el.appendChild(sp);
-      } else if (part) {
-        el.appendChild(document.createTextNode(part));
-      }
-    });
-    return;
-  }
-  // fisheye activo: cada carácter es un inline-block con su transform 3D.
   el.textContent = "";
-  const frag = document.createDocumentFragment();
-  const chars = [...text];
-  const n = chars.length;
-  const mirror = document.createElement("div");
-  mirror.style.cssText = `position:fixed;top:-9999px;left:-9999px;visibility:hidden;
-    font-size:${cfg.fs}vw;font-family:${FONTS[cfg.font]||FONTS.arcade};white-space:nowrap`;
-  document.body.appendChild(mirror);
-  mirror.textContent = text;
-  const totalW = mirror.scrollWidth || 1;
-  document.body.removeChild(mirror);
-  const widths = chars.map(c => (c === " " ? 0.6 : 1));
-  const totalUnits = widths.reduce((a,b) => a + b, 0) || 1;
-  let acc = 0;
-  for (let i = 0; i < n; i++) {
-    const ch = chars[i];
-    if (ch === " ") {
-      const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
+  text.split(/(\s+)/).forEach(part => {
+    if (/^\s+$/.test(part)) {
       const sp = document.createElement("span");
       sp.textContent = "\u00A0\u00A0";
-      sp.style.cssText = `display:inline-block;margin-left:${(0.1*ws).toFixed(3)}em;margin-right:${(0.1*ws).toFixed(3)}em;width:${(0.6*ws).toFixed(3)}em`;
-      frag.appendChild(sp);
-      acc += widths[i];
-      continue;
-    }
-    const span = document.createElement("span");
-    span.textContent = ch;
-    const centerPx = (acc + widths[i] / 2) / totalUnits * totalW;
-    acc += widths[i];
-    const t = Math.max(-1, Math.min(1, (centerPx - totalW / 2) / (totalW / 2)));
-    const sq = 1 - t * t;
-    const scaleX = 0.55 + 0.45 * sq;
-    const scaleY = 0.62 + 0.38 * sq;
-    const lift = -t * t * 8;
-    const rotY = t * -10;
-    const skew = t * 4;
-    span.style.cssText = `display:inline-block;text-align:center;will-change:transform;
-      transform:perspective(300px) rotateY(${rotY.toFixed(1)}deg) skewX(${skew.toFixed(1)}deg)
-      scale(${scaleX.toFixed(3)},${scaleY.toFixed(3)}) translateY(${lift.toFixed(1)}%)`;
-    if (i + 1 < n && chars[i + 1] !== " ") {
-      span.style.marginRight = "0.05em";
-    } else if (i + 1 >= n || chars[i + 1] === " ") {
       const ws = (cfg.wordSpacing == null ? 1 : +cfg.wordSpacing);
-      span.style.marginRight = (0.18 * ws).toFixed(3) + "em";
+      sp.style.cssText = `display:inline-block;margin-left:${(0.1*ws).toFixed(3)}em;margin-right:${(0.1*ws).toFixed(3)}em;width:${(0.6*ws).toFixed(3)}em`;
+      el.appendChild(sp);
+    } else if (part) {
+      el.appendChild(document.createTextNode(part));
     }
-    frag.appendChild(span);
-  }
-  el.appendChild(frag);
+  });
 }
 
 
@@ -1341,9 +1290,9 @@ function setLyric(text, back) {
   document.documentElement.style.setProperty("--fs", cfg.fs + "vw");
   $("lCur").style.fontSize = fsPx;
   if (!eggActive) { $("lCur").style.color = "" }   // restaurar contraste dinámico
-  // con la LENTE activa el texto va PLANO: la deformación la hace el filtro por píxel
+  // la deformación del ojo de pez la hace el filtro por píxel (lente SVG).
+  // El texto va SIEMPRE plano, garantizado.
   applyLens();
-  // text-align:center heredado del #lyrics garantiza centrado perfecto
   $("lCur").style.textAlign = "center";
   $("lBack").style.textAlign = "center";
   applyFisheye($("lCur"), text);
