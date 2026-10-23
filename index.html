@@ -104,14 +104,16 @@
   #refresh.hidden-refresh{display:none}
   @keyframes roll{0%{top:-18vh;opacity:0}7%{opacity:1}93%{opacity:1}100%{top:118vh;opacity:0}}
 
-  #top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:3vmin 8vmin 16px 6vmin;color:var(--tc);transition:color .2s;z-index:21;background:linear-gradient(rgba(0,0,0,.28),transparent)}
+  #top{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;gap:14px;padding:3vmin 8vmin 16px 6vmin;color:var(--tc);transition:color .2s;z-index:21;background:linear-gradient(rgba(0,0,0,.28),transparent);pointer-events:none}
+  #top > *{pointer-events:auto}
   #cover{width:54px;height:54px;border-radius:6px;object-fit:cover;background:rgba(255,255,255,.15)}
   #meta{min-width:0}
   #song{font-family:'SpaceGrotesk',sans-serif;font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.5)}
   #artist{font-size:13px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 8px rgba(0,0,0,.5)}
   #badge{position:absolute;top:16px;right:62px;font-size:11px;font-weight:700;letter-spacing:1.5px;padding:5px 10px;border-radius:2px;background:rgba(0,0,0,.45);color:#ffd54a;z-index:5;display:none;font-family:'SpaceGrotesk',sans-serif}
 
-  #gear{position:absolute;top:2.4vmin;right:4.6vmin;width:40px;height:40px;border-radius:2px;border:none;background:rgba(0,0,0,.38);color:#fff;font-size:19px;cursor:pointer;z-index:22}
+  #gear{position:fixed;top:16px;right:20px;width:44px;height:44px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.65);color:#fff;font-size:22px;cursor:pointer;z-index:100;display:flex;align-items:center;justify-content:center;pointer-events:auto !important;box-shadow:0 4px 16px rgba(0,0,0,.5);transition:transform .2s, background .2s}
+  #gear:hover{background:rgba(255,255,255,.25);transform:scale(1.08)}
 
   /* ====== SELECTOR RÁPIDO FIESTA/FLUIDO (eliminado → tecla F) ====== */
   /* toast: aviso efímero de modo */
@@ -127,8 +129,8 @@
   body.no-tv #screen{left:0;top:0;width:100vw;height:100svh;border-radius:2.6vmin}
 
   /* ====== PANEL DE AJUSTES — LIQUID GLASS ====== */
-  #panel{position:absolute;top:58px;right:12px;width:312px;max-height:82vh;overflow-y:auto;
-    color:#fff;border-radius:20px;padding:16px 18px;z-index:10;display:none;
+  #panel{position:fixed;top:68px;right:20px;width:320px;max-height:82vh;overflow-y:auto;
+    color:#fff;border-radius:20px;padding:16px 18px;z-index:99;display:none;
     background:linear-gradient(135deg, rgba(255,255,255,.14), rgba(255,255,255,.05));
     -webkit-backdrop-filter:blur(28px) saturate(180%);backdrop-filter:blur(28px) saturate(180%);
     box-shadow:0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25),
@@ -318,11 +320,20 @@
   </div><!-- /lensTarget -->
  <div id="fpsCounter" style="position:fixed;left:10px;top:10px;z-index:9999;font:bold 13px 'SpaceGrotesk',monospace;color:#00ff88;text-shadow:0 0 6px rgba(0,255,136,.6);pointer-events:none;display:none">-- fps</div>
 
-  <button id="gear" title="Ajustes">⚙</button>
+  <!-- gear/panel moved outside #screen -->
 
-  <!-- (selector rápido eliminado: ahora tecla F alterna fiesta/fluido) -->
 
-  <div id="panel">
+
+  <button id="bigLogin">🎵 CONECTAR CON SPOTIFY</button>
+  <div id="channel"><div id="chanStatic"></div><div id="chanBars"></div></div>
+  <canvas id="fxCanvas"></canvas>
+  <div id="spectrum"></div>
+  <div id="qrOverlay"><div id="qrBox"></div><div id="qrHint">Escanea para votar la siguiente canción 🎵</div></div>
+  <div id="transOverlay"></div>
+</div>
+
+<button id="gear" title="Ajustes (Tecla A)" aria-label="Abrir panel de ajustes">⚙</button>
+<div id="panel" style="display:none">
     <h3>🎨 Temas</h3>
     <div class="row"><label>Tema completo (paleta+CRT+fuente)</label>
       <select id="themeSel">
@@ -447,15 +458,6 @@
   </div>
 
 
-
-  <button id="bigLogin">🎵 CONECTAR CON SPOTIFY</button>
-  <div id="channel"><div id="chanStatic"></div><div id="chanBars"></div></div>
-  <canvas id="fxCanvas"></canvas>
-  <div id="spectrum"></div>
-  <div id="qrOverlay"><div id="qrBox"></div><div id="qrHint">Escanea para votar la siguiente canción 🎵</div></div>
-  <div id="transOverlay"></div>
-</div>
-
 <script>
 const $ = id => document.getElementById(id);
 let S = null, curTrack = null, lineIdx = -1, lastShown = null;
@@ -541,7 +543,24 @@ try {
 if (!cfg.timing) cfg.timing = "beats";
 
 /* ---------- controles ---------- */
-$("gear").onclick = () => { $("panel").style.display = $("panel").style.display === "none" ? "block" : "none"; };
+function togglePanel(show) {
+  const p = $("panel");
+  if (!p) return;
+  const isHidden = (show !== undefined) ? !show : (p.style.display === "none" || !p.style.display);
+  p.style.display = isHidden ? "block" : "none";
+  if (p.style.display === "block") wakeUI();
+}
+$("gear").onclick = (e) => {
+  e.stopPropagation();
+  togglePanel();
+};
+// Tecla A o coma abre/cierra panel de ajustes
+addEventListener("keydown", e => {
+  if (e.target && ["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+  if ((e.key === "a" || e.key === "A" || e.key === ",") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    togglePanel();
+  }
+});
 function bindRange(id, key, valId, fmt) {
   const el = $(id);
   el.value = cfg[key];
