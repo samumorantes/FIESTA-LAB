@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/x-icon" href="/fiesta.ico">
 <title>FIESTA — Visualizer</title>
 <style>
   @font-face{font-family:'SpaceGrotesk';src:url('/fonts/spacegrotesk.woff2') format('woff2');font-display:swap}
@@ -537,7 +538,7 @@ try {
   }
 } catch (e) { /* JSON corrupto → defaults */ }
 // La paleta debe reaccionar al beat real, no a barras antiguas guardadas.
-cfg.timing = "beats";
+if (!cfg.timing) cfg.timing = "beats";
 
 /* ---------- controles ---------- */
 $("gear").onclick = () => { $("panel").style.display = $("panel").style.display === "none" ? "block" : "none"; };
@@ -1743,16 +1744,20 @@ function isChill() {
 }
 
 /* Extrae los colores dominantes de la portada del álbum (mini-canvas, sin CORS) */
+let _sharedLabCanvas = null, _sharedLabCtx = null;
 function extractCoverPalette(url) {
   if (!url) { coverPalette = null; return; }
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => {
     try {
-      const c = document.createElement("canvas");
       const W = 24, H = 24;
-      c.width = W; c.height = H;
-      const ctx = c.getContext("2d");
+      if (!_sharedLabCanvas) {
+        _sharedLabCanvas = document.createElement("canvas");
+        _sharedLabCanvas.width = W; _sharedLabCanvas.height = H;
+        _sharedLabCtx = _sharedLabCanvas.getContext("2d", { willReadFrequently: true });
+      }
+      const c = _sharedLabCanvas, ctx = _sharedLabCtx;
       ctx.drawImage(img, 0, 0, W, H);
       const px = ctx.getImageData(0, 0, W, H).data;
       // cuantizar a cubetas y contar frecuencia
@@ -2121,9 +2126,13 @@ function playVinyl(nextTrackId) {
         }
       }).catch(() => {});
   }
-  s.innerHTML =
-    '<div class="vinyl"><div class="vinyl-hole"></div></div>' +
-    (cover ? '<img class="vinyl-cover" src="' + cover + '">' : '');
+  s.innerHTML = '<div class="vinyl"><div class="vinyl-hole"></div></div>';
+  if (cover) {
+    const vImg = document.createElement("img");
+    vImg.className = "vinyl-cover";
+    vImg.src = cover;
+    s.appendChild(vImg);
+  }
   s.style.display = "block";
   void s.offsetWidth;
   s.classList.add("anim-vinyl");
@@ -2157,7 +2166,7 @@ try {
   const mq = new URLSearchParams(location.search).get("mood");
   if (mq && ["auto","party","chill"].includes(mq)) cfg.moodOverride = mq;
   const tq = new URLSearchParams(location.search).get("transition");
-  if (tq && ["tv","shutter","vinyl","none"].includes(tq)) cfg.transition = tq;
+  if (tq && ["tv","shutter","vinyl","flashcolor","none"].includes(tq)) cfg.transition = tq;
   const tvq = new URLSearchParams(location.search).get("tv");
   if (tvq === "0") cfg.tv = false;
 } catch (e) {}

@@ -1,3 +1,4 @@
+import os
 # -*- coding: utf-8 -*-
 """Genera el icono de FIESTA (nota musical arcade sobre fondo degradado fiesta) en .ico"""
 from PIL import Image, ImageDraw
@@ -40,7 +41,8 @@ def make(size):
     d.polygon([(7.9*u, 3.4*u), (12.6*u, 5.6*u), (9.3*u, 8.0*u)], fill=fg)
     return img
 
-imgs = [make(sz) for sz in SIZES]
-imgs[-1].save(r"C:\Users\moran\fiesta-visualizer\fiesta.ico", format="ICO",
-              sizes=[(sz, sz) for sz in SIZES], append_images=imgs[:-1])
-print("fiesta.ico OK")
+if __name__ == "__main__":
+    imgs = [make(sz) for sz in SIZES]
+    out_p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fiesta.ico")
+    imgs[-1].save(out_p, format="ICO", sizes=[(sz, sz) for sz in SIZES], append_images=imgs[:-1])
+    print("fiesta.ico OK ->", out_p)
