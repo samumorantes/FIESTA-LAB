@@ -5,7 +5,7 @@ import subprocess
 import sys
 import webbrowser
 
-URL = "http://localhost:8888/"
+URL = "http://localhost:8899/"
 CHROMES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
